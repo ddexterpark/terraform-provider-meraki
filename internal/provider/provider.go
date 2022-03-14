@@ -3,10 +3,13 @@ package provider
 import (
 	"context"
 	"fmt"
-
+	apiclient "github.com/ddexterpark/dashboard-api-golang/client"
+	"github.com/go-openapi/runtime"
+	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"os"
 )
 
 // provider satisfies the tfsdk.Provider interface and usually is included
@@ -17,12 +20,15 @@ type provider struct {
 	// implementations can then make calls using this client.
 	//
 	// TODO: If appropriate, implement upstream provider SDK or HTTP client.
-	// client vendorsdk.ExampleClient
+	client *apiclient.MerakiAPIGolang
 
 	// configured is set to true at the end of the Configure method.
 	// This can be used in Resource and DataSource implementations to verify
 	// that the provider was previously configured.
 	configured bool
+
+	// Header Based Authentication
+	apiKeyHeaderAuth runtime.ClientAuthInfoWriter
 
 	// version is set to the provider version on release, "dev" when the
 	// provider is built and ran locally, and "test" when running acceptance
@@ -33,6 +39,7 @@ type provider struct {
 // providerData can be used to store data from the Terraform configuration.
 type providerData struct {
 	Example types.String `tfsdk:"example"`
+	ApiKey  types.String `tfsdk:"apiKey"`
 }
 
 func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
@@ -44,11 +51,35 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 
-	// Configuration values are now available.
-	// if data.Example.Null { /* ... */ }
+	// User must provide a user to the provider
+	var apiKey string
+	if data.ApiKey.Unknown {
+		// Cannot connect to client with an unknown value
+		resp.Diagnostics.AddWarning(
+			"Unable to create client",
+			"Cannot use unknown value as username",
+		)
+		return
+	}
 
-	// If the upstream provider SDK or HTTP client requires configuration, such
-	// as authentication or logging, this is a great opportunity to do so.
+	if data.ApiKey.Null {
+		apiKey = os.Getenv("MERAKI_DASHBOARD_API_KEY")
+	} else {
+		apiKey = data.ApiKey.Value
+	}
+
+	if apiKey == "" {
+		// Error vs warning - empty value must stop execution
+		resp.Diagnostics.AddError(
+			"Unable to find api key",
+			"ApiKey cannot be an empty string",
+		)
+		return
+	}
+
+	// Create a new Meraki Dashboard API client and set it to the provider client
+	p.apiKeyHeaderAuth = httptransport.APIKeyAuth("X-Cisco-Meraki-API-Key", "header", apiKey)
+	p.client = apiclient.Default
 
 	p.configured = true
 }
@@ -56,6 +87,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"scaffolding_example": exampleResourceType{},
+		"organization":        merakiOrganizationResourceType{},
 	}, nil
 }
 
@@ -65,6 +97,7 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 	}, nil
 }
 
+// GetSchema immutable method meant to describe a providers' configuration block. Place client authentication data here.
 func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
@@ -72,6 +105,25 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 				MarkdownDescription: "Example provider attribute",
 				Optional:            true,
 				Type:                types.StringType,
+			},
+			"apikey": {
+				MarkdownDescription: "Required authentication attribute",
+				Type:                types.StringType,
+				Optional:            false,
+				Computed:            true,
+			},
+			"base_url": {
+				MarkdownDescription: "Meraki shard url",
+				Type:                types.StringType,
+				Optional:            true,
+				Computed:            true,
+			},
+			"api_version": {
+				MarkdownDescription: "Default v1, v0 sunset in 2022.",
+				Type:                types.StringType,
+				Optional:            true,
+				Computed:            true,
+				Sensitive:           true,
 			},
 		},
 	}, nil

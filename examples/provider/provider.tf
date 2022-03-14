@@ -1,3 +1,3 @@
-provider "scaffolding" {
+provider "meraki" {
   # example configuration here
 }
