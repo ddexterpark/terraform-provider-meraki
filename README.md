@@ -62,3 +62,13 @@ In order to run the full suite of Acceptance tests, run `make testacc`.
 ```shell
 make testacc
 ```
+
+## Contributors
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+
+|                                                                                                                                                          |
+|:--------------------------------------------------------------------------------------------------------------------------------------------------------:|
+| [<img src="https://avatars.githubusercontent.com/u/30270784?s=48&v=4" width="100px"/><br/><sub><b>Dexter Park</b></sub>](https://github.com/ddexterpark) |
+
+<!-- ALL-CONTRIBUTORS-LIST:END - Do not remove or modify this section -->

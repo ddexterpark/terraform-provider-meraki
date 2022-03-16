@@ -2,10 +2,9 @@ package main
 
 import (
 	"context"
-	"log"
-
 	"github.com/ddexterpark/terraform-provider-meraki/internal/provider"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"log"
 )
 
 // Run "go generate" to format example terraform files and generate the docs for the registry/website

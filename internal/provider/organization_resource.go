@@ -10,57 +10,52 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-type merakiOrganizationResourceType struct{}
+type OrganizationResourceType struct{}
 
-func (t merakiOrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
-			"items": {
+			"id": {
+				MarkdownDescription: "merakiOrganization configurable attribute",
+				Optional:            true,
+				Type:                types.StringType,
+			},
+			"name": {
+				Computed:            true,
+				MarkdownDescription: "merakiOrganization identifier",
+				PlanModifiers: tfsdk.AttributePlanModifiers{
+					tfsdk.UseStateForUnknown(),
+				},
+				Type: types.StringType,
+			},
+			"url": {
+				MarkdownDescription: "merakiOrganization configurable attribute",
+				Optional:            true,
+				Type:                types.StringType,
+			},
+			"api": {
 				Required: true,
-				Attributes: tfsdk.ListNestedAttributes(map[string]tfsdk.Attribute{
-					"id": {
-						MarkdownDescription: "merakiOrganization configurable attribute",
-						Optional:            true,
-						Type:                types.StringType,
-					},
-					"name": {
-						Computed:            true,
-						MarkdownDescription: "merakiOrganization identifier",
-						PlanModifiers: tfsdk.AttributePlanModifiers{
-							tfsdk.UseStateForUnknown(),
-						},
-						Type: types.StringType,
-					},
-					"url": {
-						MarkdownDescription: "merakiOrganization configurable attribute",
-						Optional:            true,
-						Type:                types.StringType,
-					},
-					"api": {
+				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+					"enabled": {
+						Type:     types.BoolType,
 						Required: true,
-						Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-							"enabled": {
-								Type:     types.BoolType,
-								Required: true,
-							},
-						}),
 					},
-					"licensing": {
+				}),
+			},
+			"licensing": {
+				Required: true,
+				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+					"model": {
+						Type:     types.StringType,
 						Required: true,
-						Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-							"model": {
-								Type:     types.StringType,
-								Required: true,
-							},
-						}),
 					},
-				}, tfsdk.ListNestedAttributesOptions{}),
+				}),
 			},
 		},
 	}, nil
 }
 
-func (t merakiOrganizationResourceType) NewResource(ctx context.Context, in tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+func (t OrganizationResourceType) NewResource(ctx context.Context, in tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
 	provider, diags := convertProviderType(in)
 
 	return merakiOrganizationResource{

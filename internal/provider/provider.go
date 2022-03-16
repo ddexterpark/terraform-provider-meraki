@@ -38,8 +38,8 @@ type provider struct {
 
 // providerData can be used to store data from the Terraform configuration.
 type providerData struct {
-	Example types.String `tfsdk:"example"`
-	ApiKey  types.String `tfsdk:"apiKey"`
+	ApiKey  types.String `tfsdk:"apikey"`
+	BaseUrl types.String `tfsdk:"baseurl"`
 }
 
 func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
@@ -87,13 +87,13 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"scaffolding_example": exampleResourceType{},
-		"organization":        merakiOrganizationResourceType{},
+		"organization":        OrganizationResourceType{},
 	}, nil
 }
 
 func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
 	return map[string]tfsdk.DataSourceType{
-		"scaffolding_example": exampleDataSourceType{},
+		"organizations": OrganizationsDataSourceType{},
 	}, nil
 }
 
@@ -101,29 +101,10 @@ func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSou
 func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
-			"example": {
+			"organization": {
 				MarkdownDescription: "Example provider attribute",
 				Optional:            true,
 				Type:                types.StringType,
-			},
-			"apikey": {
-				MarkdownDescription: "Required authentication attribute",
-				Type:                types.StringType,
-				Optional:            false,
-				Computed:            true,
-			},
-			"base_url": {
-				MarkdownDescription: "Meraki shard url",
-				Type:                types.StringType,
-				Optional:            true,
-				Computed:            true,
-			},
-			"api_version": {
-				MarkdownDescription: "Default v1, v0 sunset in 2022.",
-				Type:                types.StringType,
-				Optional:            true,
-				Computed:            true,
-				Sensitive:           true,
 			},
 		},
 	}, nil

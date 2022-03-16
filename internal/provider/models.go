@@ -12,3 +12,8 @@ type Organization struct {
 	Api       types.MapType `tfsdk:"api"`
 	Licensing types.MapType `tfsdk:"licensing"`
 }
+
+// Organizations -
+type Organizations struct {
+	Organization []Organization `tfsdk:"organization"`
+}
