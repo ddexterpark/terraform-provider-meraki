@@ -1,20 +1,3 @@
-variable "MERAKI_DASHBOARD_API_KEY" {
-  default = "3b0779c586b85dca7aa810e48d8b3434d74f7e2f"
-  type = string
-}
-
-variable "MERAKI_DASHBOARD_API_URL" {
-  default = "https://api.meraki.com/api/"
-  type = string
-}
-
-
-provider "meraki" {
-  # example configuration here
-
-}
-
-
 terraform {
   required_providers {
     meraki = {
@@ -23,6 +6,30 @@ terraform {
   }
 }
 
-resource "scaffolding_example" "example" {
-  configurable_attribute = "some-value"
+provider "meraki" {
+  # example configuration here
+  apikey = ""
+  path = "/api/v1"
+  host     = "api.meraki.com"
+}
+
+
+resource "meraki_organization" "test" {
+  id = ""
+  name = "Dexter Park"
+  url = "https://n168.meraki.com/o/iZWFOa/manage/organization/overview"
+  cloud = "North America"
+  licensing = {
+    model = "per-device"
+  }
+  api = {
+      enabled = true
+    }
+}
+
+output "my_org" {
+  value = meraki_organization.test
+}
+
+data "meraki_organizations" "example" {
 }

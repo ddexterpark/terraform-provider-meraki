@@ -5,6 +5,7 @@ import (
 	"fmt"
 	apiclient "github.com/ddexterpark/dashboard-api-golang/client"
 	"github.com/go-openapi/runtime"
+
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -12,103 +13,7 @@ import (
 	"os"
 )
 
-// provider satisfies the tfsdk.Provider interface and usually is included
-// with all Resource and DataSource implementations.
-type provider struct {
-	// client can contain the upstream provider SDK or HTTP client used to
-	// communicate with the upstream service. Resource and DataSource
-	// implementations can then make calls using this client.
-	//
-	// TODO: If appropriate, implement upstream provider SDK or HTTP client.
-	client *apiclient.MerakiAPIGolang
-
-	// configured is set to true at the end of the Configure method.
-	// This can be used in Resource and DataSource implementations to verify
-	// that the provider was previously configured.
-	configured bool
-
-	// Header Based Authentication
-	apiKeyHeaderAuth runtime.ClientAuthInfoWriter
-
-	// version is set to the provider version on release, "dev" when the
-	// provider is built and ran locally, and "test" when running acceptance
-	// testing.
-	version string
-}
-
-// providerData can be used to store data from the Terraform configuration.
-type providerData struct {
-	ApiKey  types.String `tfsdk:"apikey"`
-	BaseUrl types.String `tfsdk:"baseurl"`
-}
-
-func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
-	var data providerData
-	diags := req.Config.Get(ctx, &data)
-	resp.Diagnostics.Append(diags...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	// User must provide a user to the provider
-	var apiKey string
-	if data.ApiKey.Unknown {
-		// Cannot connect to client with an unknown value
-		resp.Diagnostics.AddWarning(
-			"Unable to create client",
-			"Cannot use unknown value as username",
-		)
-		return
-	}
-
-	if data.ApiKey.Null {
-		apiKey = os.Getenv("MERAKI_DASHBOARD_API_KEY")
-	} else {
-		apiKey = data.ApiKey.Value
-	}
-
-	if apiKey == "" {
-		// Error vs warning - empty value must stop execution
-		resp.Diagnostics.AddError(
-			"Unable to find api key",
-			"ApiKey cannot be an empty string",
-		)
-		return
-	}
-
-	// Create a new Meraki Dashboard API client and set it to the provider client
-	p.apiKeyHeaderAuth = httptransport.APIKeyAuth("X-Cisco-Meraki-API-Key", "header", apiKey)
-	p.client = apiclient.Default
-
-	p.configured = true
-}
-
-func (p *provider) GetResources(ctx context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
-	return map[string]tfsdk.ResourceType{
-		"scaffolding_example": exampleResourceType{},
-		"organization":        OrganizationResourceType{},
-	}, nil
-}
-
-func (p *provider) GetDataSources(ctx context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
-	return map[string]tfsdk.DataSourceType{
-		"organizations": OrganizationsDataSourceType{},
-	}, nil
-}
-
-// GetSchema immutable method meant to describe a providers' configuration block. Place client authentication data here.
-func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	return tfsdk.Schema{
-		Attributes: map[string]tfsdk.Attribute{
-			"organization": {
-				MarkdownDescription: "Example provider attribute",
-				Optional:            true,
-				Type:                types.StringType,
-			},
-		},
-	}, nil
-}
+var stderr = os.Stderr
 
 func New(version string) func() tfsdk.Provider {
 	return func() tfsdk.Provider {
@@ -118,11 +23,171 @@ func New(version string) func() tfsdk.Provider {
 	}
 }
 
-// convertProviderType is a helper function for NewResource and NewDataSource
-// implementations to associate the concrete provider type. Alternatively,
-// this helper can be skipped and the provider type can be directly type
-// asserted (e.g. provider: in.(*provider)), however using this can prevent
-// potential panics.
+type provider struct {
+	configured bool
+
+	// meraki-golang-api client
+	client    *apiclient.MerakiAPIGolang
+	transport *httptransport.Runtime
+
+	// Header Based Authentication is an input passed to client API calls
+	apiKeyHeaderAuth runtime.ClientAuthInfoWriter
+	version          string
+}
+
+// GetSchema
+func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+	return tfsdk.Schema{
+		Attributes: map[string]tfsdk.Attribute{
+			"path": {
+				Type:     types.StringType,
+				Optional: true,
+				Computed: true,
+			},
+			"host": {
+				Type:     types.StringType,
+				Optional: true,
+				Computed: true,
+			},
+			"apikey": {
+				Type:      types.StringType,
+				Optional:  true,
+				Computed:  true,
+				Sensitive: true,
+			},
+		},
+	}, nil
+}
+
+// Provider schema struct
+type providerData struct {
+	Host   types.String `tfsdk:"host"`
+	Path   types.String `tfsdk:"path"`
+	ApiKey types.String `tfsdk:"apikey"`
+}
+
+func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
+	// Retrieve provider data from configuration
+	var config providerData
+	diags := req.Config.Get(ctx, &config)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// User must provide a user to the provider
+	var host string
+	if config.Host.Unknown {
+		// Cannot connect to client with an unknown value
+		resp.Diagnostics.AddWarning(
+			"Unable to create client",
+			"Cannot use unknown value as host",
+		)
+		return
+	}
+
+	if config.Host.Null {
+		host = os.Getenv("MERAKI_DASHBOARD_API_URL")
+	} else {
+		host = config.Host.Value
+	}
+
+	if host == "" {
+		// Error vs warning - empty value must stop execution
+		resp.Diagnostics.AddError(
+			"Unable to find host",
+			"host cannot be an empty string",
+		)
+		return
+	}
+
+	// User must provide a user to the provider
+	var path string
+	if config.Path.Unknown {
+		// Cannot connect to client with an unknown value
+		resp.Diagnostics.AddWarning(
+			"Unable to create client",
+			"Cannot use unknown value as path",
+		)
+		return
+	}
+
+	if config.Path.Null {
+		path = os.Getenv("MERAKI_DASHBOARD_API_URL")
+	} else {
+		path = config.Path.Value
+	}
+
+	if path == "" {
+		// Error vs warning - empty value must stop execution
+		resp.Diagnostics.AddError(
+			"Unable to find path",
+			"path cannot be an empty string",
+		)
+		return
+	}
+
+	// User must provide a apikey to the provider
+	var apikey string
+	if config.ApiKey.Unknown {
+		// Cannot connect to client with an unknown value
+		resp.Diagnostics.AddError(
+			"Unable to create client",
+			"Cannot use unknown value as apikey",
+		)
+		return
+	}
+
+	if config.ApiKey.Null {
+		apikey = os.Getenv("MERAKI_DASHBOARD_API_KEY")
+	} else {
+		apikey = config.ApiKey.Value
+	}
+
+	if apikey == "" {
+		// Error vs warning - empty value must stop execution
+		resp.Diagnostics.AddError(
+			"Unable to find apikey",
+			"apikey cannot be an empty string",
+		)
+		return
+	}
+
+	// Create a new Meraki Dashboard API client and set it to the provider client
+	p.transport = httptransport.New(host, path, []string{"https"})
+	p.transport.DefaultAuthentication = httptransport.APIKeyAuth("X-Cisco-Meraki-API-Key", "header", apikey)
+
+	p.client = MerakiApiClient(p.transport)
+	p.configured = true
+}
+
+func MerakiApiClient(transport *httptransport.Runtime) *apiclient.MerakiAPIGolang {
+	merakiApiClient, _ := MerakiApiClientWithErrors(transport)
+	return merakiApiClient
+}
+
+func MerakiApiClientWithErrors(transport *httptransport.Runtime) (*apiclient.MerakiAPIGolang, error) {
+
+	// perhaps an API call as a health check could be error pass condition?
+	client := apiclient.New(transport, nil)
+
+	return client, nil
+}
+
+// GetResources - Defines provider resources
+func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
+	return map[string]tfsdk.ResourceType{
+		"meraki_organization": OrganizationResourceType{},
+	}, nil
+}
+
+// GetDataSources - Defines provider data sources
+func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
+	return map[string]tfsdk.DataSourceType{
+		"meraki_organizations": OrganizationsDataSourceType{},
+	}, nil
+}
+
 func convertProviderType(in tfsdk.Provider) (provider, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
@@ -145,4 +210,5 @@ func convertProviderType(in tfsdk.Provider) (provider, diag.Diagnostics) {
 	}
 
 	return *p, diags
+
 }

@@ -2,8 +2,7 @@ package provider
 
 import (
 	"context"
-	"log"
-
+	"github.com/ddexterpark/dashboard-api-golang/client/organizations"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -14,18 +13,47 @@ type OrganizationsDataSourceType struct{}
 func (t OrganizationsDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Example data source",
+		MarkdownDescription: "Organizations data source",
 
+		//TODO Figure out how to make this an array if needed
 		Attributes: map[string]tfsdk.Attribute{
-			"configurable_attribute": {
-				MarkdownDescription: "Example configurable attribute",
+			"id": {
+				MarkdownDescription: "merakiOrganization id",
 				Optional:            true,
 				Type:                types.StringType,
 			},
-			"id": {
-				MarkdownDescription: "Example identifier",
+			"name": {
+				MarkdownDescription: "merakiOrganization name",
+				Optional:            true,
 				Type:                types.StringType,
-				Computed:            true,
+			},
+			"url": {
+				MarkdownDescription: "merakiOrganization url",
+				Optional:            true,
+				Type:                types.StringType,
+			},
+			"cloud": {
+				MarkdownDescription: "merakiOrganization region",
+				Optional:            true,
+				Type:                types.StringType,
+			},
+			"api": {
+				Optional: true,
+				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+					"enabled": {
+						Type:     types.BoolType,
+						Required: true,
+					},
+				}),
+			},
+			"licensing": {
+				Optional: true,
+				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+					"model": {
+						Type:     types.StringType,
+						Required: true,
+					},
+				}),
 			},
 		},
 	}, nil
@@ -39,41 +67,49 @@ func (t OrganizationsDataSourceType) NewDataSource(ctx context.Context, in tfsdk
 	}, diags
 }
 
-type OrganizationsDataSourceData struct {
-	ConfigurableAttribute types.String `tfsdk:"configurable_attribute"`
-	Id                    types.String `tfsdk:"id"`
-}
-
 type OrganizationsDataSource struct {
 	provider provider
 }
 
 func (d OrganizationsDataSource) Read(ctx context.Context, req tfsdk.ReadDataSourceRequest, resp *tfsdk.ReadDataSourceResponse) {
-	var data OrganizationsDataSourceData
+	var data Organizations
 
 	diags := req.Config.Get(ctx, &data)
 	resp.Diagnostics.Append(diags...)
-
-	log.Printf("got here")
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	log.Printf("got here")
+	params := organizations.NewGetOrganizationsParams()
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// example, err := d.provider.client.ReadExample(...)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read example, got error: %s", err))
-	//     return
-	// }
+	orgs, err := d.provider.client.Organizations.GetOrganizations(params, d.provider.apiKeyHeaderAuth)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Error reading meraki organization",
+			"Could not complete read Organization request for org: "+err.Error(),
+		)
+		return
+	}
 
-	// For the purposes of this example code, hardcoding a response value to
-	// save into the Terraform state.
-	data.Id = types.String{Value: "example-id"}
+	var result []Organization
+	for _, org := range orgs.Payload {
+		result = append(result, Organization{
+			ID:        types.String{Value: org.ID},
+			Name:      types.String{Value: org.Name},
+			Url:       types.String{Value: org.URL},
+			Cloud:     types.String{Value: org.Cloud.Region.Name},
+			Api:       Api{Enabled: types.Bool{Value: org.API.Enabled}},
+			Licensing: Licensing{Model: types.String{Value: org.Licensing.Model}},
+		})
+	}
 
-	diags = resp.State.Set(ctx, &data)
+	diags = resp.State.Set(ctx, &result)
 	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		resp.Diagnostics.AddError(
+			"Error setting state",
+			"Could not set state, unexpected error: "+err.Error(),
+		)
+		return
+	}
 }
