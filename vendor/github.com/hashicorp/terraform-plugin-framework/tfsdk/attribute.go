@@ -49,13 +49,25 @@ type Attribute struct {
 	// Optional indicates whether the practitioner can choose not to enter
 	// a value for this attribute or not. Optional and Required cannot both
 	// be true.
+	//
+	// When defining an attribute that has Optional set to true,
+	// and uses PlanModifiers to set a "default value" when none is provided,
+	// Computed must also be set to true. This is necessary because default
+	// values are, in effect, set by the provider (i.e. computed).
 	Optional bool
 
 	// Computed indicates whether the provider may return its own value for
-	// this attribute or not. Required and Computed cannot both be true. If
+	// this Attribute or not. Required and Computed cannot both be true. If
 	// Required and Optional are both false, Computed must be true, and the
 	// attribute will be considered "read only" for the practitioner, with
 	// only the provider able to set its value.
+	//
+	// When defining an Optional Attribute that has a "default value"
+	// plan modifier, Computed must also be set to true. Otherwise,
+	// Terraform will return an error like:
+	//
+	//      planned value ... for a non-computed attribute
+	//
 	Computed bool
 
 	// Sensitive indicates whether the value of this attribute should be
@@ -85,6 +97,8 @@ type Attribute struct {
 	// Plan modification only applies to resources, not data sources or
 	// providers. Setting PlanModifiers on a data source or provider attribute
 	// will have no effect.
+	//
+	// When providing PlanModifiers, it's necessary to set Computed to true.
 	PlanModifiers AttributePlanModifiers
 }
 
@@ -211,10 +225,7 @@ func (a Attribute) tfprotov6SchemaAttribute(ctx context.Context, name string, pa
 		return schemaAttribute, nil
 	}
 
-	object := &tfprotov6.SchemaObject{
-		MinItems: a.Attributes.GetMinItems(),
-		MaxItems: a.Attributes.GetMaxItems(),
-	}
+	object := &tfprotov6.SchemaObject{}
 	nm := a.Attributes.GetNestingMode()
 	switch nm {
 	case NestingModeSingle:
@@ -305,7 +316,6 @@ func (a Attribute) validate(ctx context.Context, req ValidateAttributeRequest, r
 
 	if a.DeprecationMessage != "" && attributeConfig != nil {
 		tfValue, err := attributeConfig.ToTerraformValue(ctx)
-
 		if err != nil {
 			resp.Diagnostics.AddAttributeError(
 				req.AttributePath,
@@ -316,7 +326,7 @@ func (a Attribute) validate(ctx context.Context, req ValidateAttributeRequest, r
 			return
 		}
 
-		if tfValue != nil {
+		if !tfValue.IsNull() {
 			resp.Diagnostics.AddAttributeWarning(
 				req.AttributePath,
 				"Attribute Deprecated",
@@ -378,8 +388,7 @@ func (a Attribute) validateAttributes(ctx context.Context, req ValidateAttribute
 		}
 
 		for _, value := range s.Elems {
-			tfValueRaw, err := value.ToTerraformValue(ctx)
-
+			tfValue, err := value.ToTerraformValue(ctx)
 			if err != nil {
 				err := fmt.Errorf("error running ToTerraformValue on element value: %v", value)
 				resp.Diagnostics.AddAttributeError(
@@ -390,8 +399,6 @@ func (a Attribute) validateAttributes(ctx context.Context, req ValidateAttribute
 
 				return
 			}
-
-			tfValue := tftypes.NewValue(s.ElemType.TerraformType(ctx), tfValueRaw)
 
 			for nestedName, nestedAttr := range a.Attributes.GetAttributes() {
 				nestedAttrReq := ValidateAttributeRequest{
@@ -584,8 +591,7 @@ func (a Attribute) modifyPlan(ctx context.Context, req ModifyAttributePlanReques
 		}
 
 		for _, value := range s.Elems {
-			tfValueRaw, err := value.ToTerraformValue(ctx)
-
+			tfValue, err := value.ToTerraformValue(ctx)
 			if err != nil {
 				err := fmt.Errorf("error running ToTerraformValue on element value: %v", value)
 				resp.Diagnostics.AddAttributeError(
@@ -596,8 +602,6 @@ func (a Attribute) modifyPlan(ctx context.Context, req ModifyAttributePlanReques
 
 				return
 			}
-
-			tfValue := tftypes.NewValue(s.ElemType.TerraformType(ctx), tfValueRaw)
 
 			for name, attr := range a.Attributes.GetAttributes() {
 				attrReq := ModifyAttributePlanRequest{
