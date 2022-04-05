@@ -13,7 +13,7 @@ Example data source
 ## Example Usage
 
 ```terraform
-data "scaffolding_example" "example" {
+data "organizations" "example" {
   configurable_attribute = "some-value"
 }
 ```

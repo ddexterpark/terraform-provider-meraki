@@ -14,46 +14,50 @@ func (t OrganizationsDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schem
 	return tfsdk.Schema{
 		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Organizations data source",
-
-		//TODO Figure out how to make this an array if needed
 		Attributes: map[string]tfsdk.Attribute{
-			"id": {
-				MarkdownDescription: "merakiOrganization id",
+			"organizations": {
+				MarkdownDescription: "List of organizations",
 				Optional:            true,
-				Type:                types.StringType,
-			},
-			"name": {
-				MarkdownDescription: "merakiOrganization name",
-				Optional:            true,
-				Type:                types.StringType,
-			},
-			"url": {
-				MarkdownDescription: "merakiOrganization url",
-				Optional:            true,
-				Type:                types.StringType,
-			},
-			"cloud": {
-				MarkdownDescription: "merakiOrganization region",
-				Optional:            true,
-				Type:                types.StringType,
-			},
-			"api": {
-				Optional: true,
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"enabled": {
-						Type:     types.BoolType,
-						Required: true,
+				Attributes: tfsdk.SetNestedAttributes(map[string]tfsdk.Attribute{
+					"id": {
+						MarkdownDescription: "merakiOrganization id",
+						Optional:            true,
+						Type:                types.StringType,
 					},
-				}),
-			},
-			"licensing": {
-				Optional: true,
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"model": {
-						Type:     types.StringType,
-						Required: true,
+					"name": {
+						MarkdownDescription: "merakiOrganization name",
+						Optional:            true,
+						Type:                types.StringType,
 					},
-				}),
+					"url": {
+						MarkdownDescription: "merakiOrganization url",
+						Optional:            true,
+						Type:                types.StringType,
+					},
+					"cloud": {
+						MarkdownDescription: "merakiOrganization region",
+						Optional:            true,
+						Type:                types.StringType,
+					},
+					"api": {
+						Optional: true,
+						Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+							"enabled": {
+								Type:     types.BoolType,
+								Optional: true,
+							},
+						}),
+					},
+					"licensing": {
+						Optional: true,
+						Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+							"model": {
+								Type:     types.StringType,
+								Optional: true,
+							},
+						}),
+					},
+				}, tfsdk.SetNestedAttributesOptions{}),
 			},
 		},
 	}, nil
@@ -67,12 +71,27 @@ func (t OrganizationsDataSourceType) NewDataSource(ctx context.Context, in tfsdk
 	}, diags
 }
 
+// OrganizationDataSourceData -
+type OrganizationDataSourceData struct {
+	ID        types.String `tfsdk:"id"`
+	Name      types.String `tfsdk:"name"`
+	Url       types.String `tfsdk:"url"`
+	Cloud     types.String `tfsdk:"cloud"`
+	Api       Api          `tfsdk:"api"`
+	Licensing Licensing    `tfsdk:"licensing"`
+}
+
+// OrganizationsDataSourceData -
+type OrganizationsDataSourceData struct {
+	Organizations []OrganizationDataSourceData `tfsdk:"organizations"`
+}
+
 type OrganizationsDataSource struct {
 	provider provider
 }
 
 func (d OrganizationsDataSource) Read(ctx context.Context, req tfsdk.ReadDataSourceRequest, resp *tfsdk.ReadDataSourceResponse) {
-	var data Organizations
+	var data OrganizationsDataSourceData
 
 	diags := req.Config.Get(ctx, &data)
 	resp.Diagnostics.Append(diags...)
@@ -81,35 +100,28 @@ func (d OrganizationsDataSource) Read(ctx context.Context, req tfsdk.ReadDataSou
 	}
 
 	params := organizations.NewGetOrganizationsParams()
-
-	orgs, err := d.provider.client.Organizations.GetOrganizations(params, d.provider.apiKeyHeaderAuth)
+	response, err := d.provider.client.Organizations.GetOrganizations(params, d.provider.transport.DefaultAuthentication)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error reading meraki organization",
-			"Could not complete read Organization request for org: "+err.Error(),
+			"Could not complete read Organization request: "+err.Error(),
 		)
 		return
 	}
 
-	var result []Organization
-	for _, org := range orgs.Payload {
-		result = append(result, Organization{
-			ID:        types.String{Value: org.ID},
-			Name:      types.String{Value: org.Name},
-			Url:       types.String{Value: org.URL},
-			Cloud:     types.String{Value: org.Cloud.Region.Name},
-			Api:       Api{Enabled: types.Bool{Value: org.API.Enabled}},
-			Licensing: Licensing{Model: types.String{Value: org.Licensing.Model}},
+	// Map response body to resource schema attribute
+	for _, organization := range response.Payload {
+		data.Organizations = append(data.Organizations, OrganizationDataSourceData{
+			ID:        types.String{Value: organization.ID},
+			Name:      types.String{Value: organization.Name},
+			Url:       types.String{Value: organization.URL},
+			Cloud:     types.String{Value: organization.Cloud.Region.Name},
+			Api:       Api{Enabled: types.Bool{Value: organization.API.Enabled}},
+			Licensing: Licensing{Model: types.String{Value: organization.Licensing.Model}},
 		})
 	}
 
-	diags = resp.State.Set(ctx, &result)
+	// Map response body to resource schema attribute
+	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		resp.Diagnostics.AddError(
-			"Error setting state",
-			"Could not set state, unexpected error: "+err.Error(),
-		)
-		return
-	}
 }

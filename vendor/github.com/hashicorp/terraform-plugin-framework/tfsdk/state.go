@@ -131,7 +131,7 @@ func (s *State) Set(ctx context.Context, val interface{}) diag.Diagnostics {
 		return diags
 	}
 
-	newStateVal, err := newStateAttrValue.ToTerraformValue(ctx)
+	newState, err := newStateAttrValue.ToTerraformValue(ctx)
 	if err != nil {
 		err = fmt.Errorf("error running ToTerraformValue on state: %w", err)
 		diags.AddError(
@@ -140,8 +140,6 @@ func (s *State) Set(ctx context.Context, val interface{}) diag.Diagnostics {
 		)
 		return diags
 	}
-
-	newState := tftypes.NewValue(s.Schema.AttributeType().TerraformType(ctx), newStateVal)
 
 	s.Raw = newState
 	return diags
@@ -176,7 +174,7 @@ func (s *State) SetAttribute(ctx context.Context, path *tftypes.AttributePath, v
 		return diags
 	}
 
-	newTfVal, err := newVal.ToTerraformValue(ctx)
+	tfVal, err := newVal.ToTerraformValue(ctx)
 	if err != nil {
 		err = fmt.Errorf("error running ToTerraformValue on new state value: %w", err)
 		diags.AddAttributeError(
@@ -186,8 +184,6 @@ func (s *State) SetAttribute(ctx context.Context, path *tftypes.AttributePath, v
 		)
 		return diags
 	}
-
-	tfVal := tftypes.NewValue(attrType.TerraformType(ctx), newTfVal)
 
 	if attrTypeWithValidate, ok := attrType.(attr.TypeWithValidate); ok {
 		diags.Append(attrTypeWithValidate.Validate(ctx, tfVal, path)...)
@@ -220,7 +216,7 @@ func (s *State) SetAttribute(ctx context.Context, path *tftypes.AttributePath, v
 
 // pathExists walks the current state and returns true if the path can be reached.
 // The value at the path may be null or unknown.
-func (s State) pathExists(ctx context.Context, path *tftypes.AttributePath) (bool, diag.Diagnostics) {
+func (s State) pathExists(_ context.Context, path *tftypes.AttributePath) (bool, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	_, remaining, err := tftypes.WalkAttributePath(s.Raw, path)
@@ -310,7 +306,7 @@ func (s State) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attr
 	}
 
 	var childValueDiags diag.Diagnostics
-	childStep := path.Steps()[len(path.Steps())-1]
+	childStep := path.LastStep()
 	parentValue, childValueDiags = upsertChildValue(ctx, parentPath, parentValue, childStep, tfVal)
 	diags.Append(childValueDiags...)
 

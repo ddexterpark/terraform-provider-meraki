@@ -13,7 +13,7 @@ Example resource
 ## Example Usage
 
 ```terraform
-resource "scaffolding_example" "example" {
+resource "organizations" "example" {
   configurable_attribute = "some-value"
 }
 ```

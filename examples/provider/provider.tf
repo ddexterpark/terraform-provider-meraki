@@ -8,28 +8,22 @@ terraform {
 
 provider "meraki" {
   # example configuration here
-  apikey = ""
-  path = "/api/v1"
-  host     = "api.meraki.com"
+  apikey = var.MERAKI_DASHBOARD_API_KEY
+  path   = var.path
+  host   = var.host
+}
+
+// Get List of Organizations
+data "meraki_organizations" "list" {
+}
+
+// terraform output -json organizations | jq
+output "organizations" {
+  value = data.meraki_organizations.list
+}
+
+resource "meraki_organization" "terraform1" {
+  name = "terraform1"
 }
 
 
-resource "meraki_organization" "test" {
-  id = ""
-  name = "Dexter Park"
-  url = "https://n168.meraki.com/o/iZWFOa/manage/organization/overview"
-  cloud = "North America"
-  licensing = {
-    model = "per-device"
-  }
-  api = {
-      enabled = true
-    }
-}
-
-output "my_org" {
-  value = meraki_organization.test
-}
-
-data "meraki_organizations" "example" {
-}

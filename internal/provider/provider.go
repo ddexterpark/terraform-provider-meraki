@@ -4,16 +4,13 @@ import (
 	"context"
 	"fmt"
 	apiclient "github.com/ddexterpark/dashboard-api-golang/client"
-	"github.com/go-openapi/runtime"
-
 	httptransport "github.com/go-openapi/runtime/client"
+
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"os"
 )
-
-var stderr = os.Stderr
 
 func New(version string) func() tfsdk.Provider {
 	return func() tfsdk.Provider {
@@ -23,19 +20,27 @@ func New(version string) func() tfsdk.Provider {
 	}
 }
 
+// provider satisfies the tfsdk.Provider interface and usually is included
+// with all Resource and DataSource implementations.
 type provider struct {
-	configured bool
-
+	// client can contain the upstream provider SDK or HTTP client used to
+	// communicate with the upstream service. Resource and DataSource
+	// implementations can then make calls using this client.
 	// meraki-golang-api client
 	client    *apiclient.MerakiAPIGolang
 	transport *httptransport.Runtime
 
-	// Header Based Authentication is an input passed to client API calls
-	apiKeyHeaderAuth runtime.ClientAuthInfoWriter
-	version          string
+	// configured is set to true at the end of the Configure method.
+	// This can be used in Resource and DataSource implementations to verify
+	// that the provider was previously configured.
+	configured bool
+
+	// version is set to the provider version on release, "dev" when the
+	// provider is built and ran locally, and "test" when running acceptance
+	// testing.
+	version string
 }
 
-// GetSchema
 func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
@@ -51,8 +56,7 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 			},
 			"apikey": {
 				Type:      types.StringType,
-				Optional:  true,
-				Computed:  true,
+				Required:  true,
 				Sensitive: true,
 			},
 		},
@@ -77,17 +81,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	// User must provide a user to the provider
 	var host string
-	if config.Host.Unknown {
-		// Cannot connect to client with an unknown value
-		resp.Diagnostics.AddWarning(
-			"Unable to create client",
-			"Cannot use unknown value as host",
-		)
-		return
-	}
-
 	if config.Host.Null {
-		host = os.Getenv("MERAKI_DASHBOARD_API_URL")
+		host = "api.meraki.com"
 	} else {
 		host = config.Host.Value
 	}
@@ -103,17 +98,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	// User must provide a user to the provider
 	var path string
-	if config.Path.Unknown {
-		// Cannot connect to client with an unknown value
-		resp.Diagnostics.AddWarning(
-			"Unable to create client",
-			"Cannot use unknown value as path",
-		)
-		return
-	}
-
 	if config.Path.Null {
-		path = os.Getenv("MERAKI_DASHBOARD_API_URL")
+		path = "/api/v1"
 	} else {
 		path = config.Path.Value
 	}
@@ -156,22 +142,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	// Create a new Meraki Dashboard API client and set it to the provider client
 	p.transport = httptransport.New(host, path, []string{"https"})
 	p.transport.DefaultAuthentication = httptransport.APIKeyAuth("X-Cisco-Meraki-API-Key", "header", apikey)
-
-	p.client = MerakiApiClient(p.transport)
+	p.client = apiclient.New(p.transport, nil)
 	p.configured = true
-}
-
-func MerakiApiClient(transport *httptransport.Runtime) *apiclient.MerakiAPIGolang {
-	merakiApiClient, _ := MerakiApiClientWithErrors(transport)
-	return merakiApiClient
-}
-
-func MerakiApiClientWithErrors(transport *httptransport.Runtime) (*apiclient.MerakiAPIGolang, error) {
-
-	// perhaps an API call as a health check could be error pass condition?
-	client := apiclient.New(transport, nil)
-
-	return client, nil
 }
 
 // GetResources - Defines provider resources
@@ -188,6 +160,11 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 	}, nil
 }
 
+// convertProviderType is a helper function for NewResource and NewDataSource
+// implementations to associate the concrete provider type. Alternatively,
+// this helper can be skipped and the provider type can be directly type
+// asserted (e.g. provider: in.(*provider)), however using this can prevent
+// potential panics.
 func convertProviderType(in tfsdk.Provider) (provider, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
