@@ -24,6 +24,13 @@ output "organizations" {
 
 resource "meraki_organization" "terraform1" {
   name = "terraform1"
+
 }
 
+// terraform output -json terraform1 | jq
+output "terraform1" {
+  value = meraki_organization.terraform1
+}
 
+// Destroy an org after creation
+// terraform state rm 'meraki_organization.terraform1'

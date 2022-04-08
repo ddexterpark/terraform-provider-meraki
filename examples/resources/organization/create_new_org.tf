@@ -1,6 +1,6 @@
 // Create single organization
-resource "meraki_organization" "org1" {
-name = "org1"
+resource "meraki_organization" "terraform1" {
+name = "terraform1"
 }
 
 // Create 2 new orgs at once  with count feature (value starts at 0)
@@ -26,3 +26,5 @@ for_each = {
 name = "map-org-${each.key}-${each.value}}"
 }
 
+// Destroy an org after creation
+// terraform state rm 'meraki_organization.'

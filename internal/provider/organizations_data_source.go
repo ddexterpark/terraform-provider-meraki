@@ -71,19 +71,27 @@ func (t OrganizationsDataSourceType) NewDataSource(ctx context.Context, in tfsdk
 	}, diags
 }
 
-// OrganizationDataSourceData -
-type OrganizationDataSourceData struct {
-	ID        types.String `tfsdk:"id"`
-	Name      types.String `tfsdk:"name"`
-	Url       types.String `tfsdk:"url"`
-	Cloud     types.String `tfsdk:"cloud"`
-	Api       Api          `tfsdk:"api"`
-	Licensing Licensing    `tfsdk:"licensing"`
-}
-
 // OrganizationsDataSourceData -
 type OrganizationsDataSourceData struct {
 	Organizations []OrganizationDataSourceData `tfsdk:"organizations"`
+}
+
+// OrganizationDataSourceData -
+type OrganizationDataSourceData struct {
+	ID        types.String           `tfsdk:"id"`
+	Name      types.String           `tfsdk:"name"`
+	Url       types.String           `tfsdk:"url"`
+	Cloud     types.String           `tfsdk:"cloud"`
+	Api       OrganizationsApi       `tfsdk:"api"`
+	Licensing OrganizationsLicensing `tfsdk:"licensing"`
+}
+
+type OrganizationsApi struct {
+	Enabled types.Bool `tfsdk:"enabled"`
+}
+
+type OrganizationsLicensing struct {
+	Model types.String `tfsdk:"model"`
 }
 
 type OrganizationsDataSource struct {
@@ -116,8 +124,8 @@ func (d OrganizationsDataSource) Read(ctx context.Context, req tfsdk.ReadDataSou
 			Name:      types.String{Value: organization.Name},
 			Url:       types.String{Value: organization.URL},
 			Cloud:     types.String{Value: organization.Cloud.Region.Name},
-			Api:       Api{Enabled: types.Bool{Value: organization.API.Enabled}},
-			Licensing: Licensing{Model: types.String{Value: organization.Licensing.Model}},
+			Api:       OrganizationsApi{Enabled: types.Bool{Value: organization.API.Enabled}},
+			Licensing: OrganizationsLicensing{Model: types.String{Value: organization.Licensing.Model}},
 		})
 	}
 

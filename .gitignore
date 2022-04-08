@@ -3,7 +3,8 @@
 .DS_Store
 example.tf
 terraform.tfplan
-terraform.tfstate
+secret.auto.tfvars
+*.tfstate
 bin/
 dist/
 modules-dev/
@@ -33,3 +34,6 @@ website/vendor
 
 # Keep windows files with windows line endings
 *.winfile eol=crlf
+examples/provider/secret.auto.tfvars
+examples/provider/logs.txt
+examples/provider/terraform 2.tfstate

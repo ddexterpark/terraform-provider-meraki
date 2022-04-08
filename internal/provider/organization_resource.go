@@ -9,17 +9,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 type OrganizationResourceType struct{}
 
 func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
-	// TODO - rework the schema based on learnings from this article(also check how hashmaps are implimented in the tf docs and scaffolding repos..):
-	// https://medium.com/@steve_strutt/developing-a-public-terraform-provider-part-4-resource-schema-fb3cc93954e0
-	// https://github.com/IBM-Cloud/terraform-provider-ibm/blob/master/ibm/service/cis/resource_ibm_cis_origin_pool.go
 	return tfsdk.Schema{
 		MarkdownDescription: "Organization resource",
-
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
 				MarkdownDescription: "merakiOrganization id",
@@ -29,7 +26,8 @@ func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, 
 			},
 			"name": {
 				MarkdownDescription: "merakiOrganization name",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 				Type:                types.StringType,
 			},
 			"url": {
@@ -45,12 +43,26 @@ func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, 
 				Type:                types.StringType,
 			},
 			"api": {
-				Type:     types.MapType{ElemType: types.BoolType},
+				Computed: true,
 				Optional: true,
+				Attributes: tfsdk.MapNestedAttributes(map[string]tfsdk.Attribute{
+					"enabled": {
+						Type:     types.BoolType,
+						Optional: true,
+						Computed: true,
+					},
+				}, tfsdk.MapNestedAttributesOptions{}),
 			},
 			"licensing": {
-				Type:     types.MapType{ElemType: types.StringType},
+				Computed: true,
 				Optional: true,
+				Attributes: tfsdk.MapNestedAttributes(map[string]tfsdk.Attribute{
+					"model": {
+						Type:     types.StringType,
+						Optional: true,
+						Computed: true,
+					},
+				}, tfsdk.MapNestedAttributesOptions{}),
 			},
 		},
 	}, nil
@@ -65,12 +77,12 @@ func (t OrganizationResourceType) NewResource(ctx context.Context, in tfsdk.Prov
 }
 
 type merakiOrganizationData struct {
-	ID        types.String `tfsdk:"id"`
-	Name      types.String `tfsdk:"name"`
-	Url       types.String `tfsdk:"url"`
-	Cloud     types.String `tfsdk:"cloud"`
-	API       Api          `tfsdk:"api"`
-	Licensing Licensing    `tfsdk:"licensing"`
+	ID        types.String         `tfsdk:"id"`
+	Name      types.String         `tfsdk:"name"`
+	Url       types.String         `tfsdk:"url"`
+	Cloud     types.String         `tfsdk:"cloud"`
+	API       map[string]Api       `tfsdk:"api"`
+	Licensing map[string]Licensing `tfsdk:"licensing"`
 }
 
 type Api struct {
@@ -85,23 +97,40 @@ type merakiOrganizationResource struct {
 	provider provider
 }
 
-func valueConversion(data interface{}, results interface{}) {
+func valueConversion(ctx context.Context, data interface{}, results interface{}) {
 	jsonString, _ := json.Marshal(data)
 
 	// convert json to struct
 	err := json.Unmarshal(jsonString, &results)
 	if err != nil {
+		tflog.Debug(ctx, fmt.Sprintf("api response: %s", err.Error()))
 		return
 	}
 }
 
 func (r merakiOrganizationResource) Create(ctx context.Context, req tfsdk.CreateResourceRequest, resp *tfsdk.CreateResourceResponse) {
+
+	if !r.provider.configured {
+		resp.Diagnostics.AddError(
+			"Provider not configured",
+			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
+		)
+		return
+	}
+
+	// TODO - struct does not marshal see if there is a better way...
 	var data merakiOrganizationData
 
 	diags := req.Config.Get(ctx, &data)
-	resp.Diagnostics.Append(diags...)
 
+	tflog.Info(ctx, fmt.Sprintf("api response: %v", data))
+
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
+		resp.Diagnostics.AddError(
+			"Create Organization Error",
+			fmt.Sprintf("failed to retrieve config data: %v", data),
+		)
 		return
 	}
 
@@ -117,8 +146,10 @@ func (r merakiOrganizationResource) Create(ctx context.Context, req tfsdk.Create
 		return
 	}
 
+	tflog.Debug(ctx, fmt.Sprintf("api response: %s", response))
+
 	// Map response body to resource schema attribute
-	valueConversion(response.GetPayload(), &data)
+	valueConversion(ctx, response.GetPayload(), &data)
 
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
@@ -141,22 +172,32 @@ func (r merakiOrganizationResource) Read(ctx context.Context, req tfsdk.ReadReso
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Read Organization Error",
-			fmt.Sprintf("Failed Read Organization Response: %s", err),
+			fmt.Sprintf("Failure: %s", err),
 		)
 		return
 	}
 
+	tflog.Debug(ctx, fmt.Sprintf("api response: %s", response))
+
 	// Map response body to resource schema attribute
-	data.ID = types.String{Value: response.GetPayload().ID}
-	data.Name = types.String{Value: response.GetPayload().Name}
-	data.Url = types.String{Value: response.GetPayload().URL}
-	data.Cloud = types.String{Value: response.GetPayload().Cloud.Region.Name}
+	var resourceResult = merakiOrganizationData{
+		ID:    types.String{Value: response.GetPayload().ID},
+		Name:  types.String{Value: response.GetPayload().Name},
+		Url:   types.String{Value: response.GetPayload().URL},
+		Cloud: types.String{Value: response.GetPayload().Cloud.Region.Name},
+		API: map[string]Api{
+			"enabled": {
+				types.Bool{Value: response.GetPayload().API.Enabled},
+			},
+		},
+		Licensing: map[string]Licensing{
+			"model": {
+				types.String{Value: response.GetPayload().Licensing.Model},
+			},
+		},
+	}
 
-	//TODO - breaking provider
-	data.Licensing.Model = types.String{Value: response.GetPayload().Licensing.Model}
-	data.API.Enabled = types.Bool{Value: response.GetPayload().API.Enabled}
-
-	diags = resp.State.Set(ctx, &data)
+	diags = resp.State.Set(ctx, &resourceResult)
 	resp.Diagnostics.Append(diags...)
 }
 
@@ -173,9 +214,7 @@ func (r merakiOrganizationResource) Update(ctx context.Context, req tfsdk.Update
 	params := organizations.NewUpdateOrganizationParams()
 	params.OrganizationID = data.ID.Value
 	params.UpdateOrganization.Name = data.Name.Value
-
-	// TODO - breaking provider
-	//params.UpdateOrganization.API.Enabled = data.Api.Enabled.Value
+	//params.UpdateOrganization.API.Enabled = data.API
 
 	response, err := r.provider.client.Organizations.UpdateOrganization(params, r.provider.transport.DefaultAuthentication)
 	if err != nil {
@@ -187,7 +226,7 @@ func (r merakiOrganizationResource) Update(ctx context.Context, req tfsdk.Update
 	}
 
 	// Map response body to resource schema attribute
-	valueConversion(response.GetPayload(), &data)
+	valueConversion(ctx, response.GetPayload(), &data)
 
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)

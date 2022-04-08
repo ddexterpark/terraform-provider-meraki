@@ -7,7 +7,7 @@ variable "path" {
   type    = string
   default = "/api/v1"
   validation {
-    condition = can(regex("^/api/v", var.path))
+    condition     = can(regex("^/api/v", var.path))
     error_message = "Valid path must contain /api/v[0-1]."
   }
 }

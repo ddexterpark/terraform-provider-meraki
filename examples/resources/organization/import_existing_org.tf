@@ -35,3 +35,7 @@ output "terraform_example_org" {
 
 // Verify org is in state file
 // terraform output -json terraform_example_org | jq
+
+
+// Destroy an org after creation
+// terraform state rm 'meraki_organization.terraform_example_org'
