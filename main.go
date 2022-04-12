@@ -27,6 +27,15 @@ var (
 	// commit  string = ""
 )
 
+// Terraform has detailed logs which can be enabled by setting the TF_LOG environment variable to any value. This will cause detailed logs to appear on stderr.
+//You can set TF_LOG to one of the log levels TRACE, DEBUG, INFO, WARN or ERROR to change the verbosity of the logs.
+//Setting TF_LOG to JSON outputs logs at the TRACE level or higher, and uses a parseable JSON encoding as the formatting.
+
+// export TF_LOG=DEBUG
+
+// Redirect stderr to file instead of viewing in console
+// export TF_LOG_PATH=${PWD}/logs.txt
+
 func main() {
 	var debug bool
 

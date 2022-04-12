@@ -22,7 +22,7 @@ github.com/asaskevich/govalidator
 # github.com/bgentry/speakeasy v0.1.0
 ## explicit
 github.com/bgentry/speakeasy
-# github.com/ddexterpark/dashboard-api-golang v0.0.0-20220308054301-d877655c8f85
+# github.com/ddexterpark/dashboard-api-golang v0.0.0-20220409062142-ef3c1f2f0856
 ## explicit; go 1.14
 github.com/ddexterpark/dashboard-api-golang/client
 github.com/ddexterpark/dashboard-api-golang/client/appliance
@@ -230,6 +230,8 @@ github.com/mitchellh/mapstructure
 # github.com/mitchellh/reflectwalk v1.0.2
 ## explicit
 github.com/mitchellh/reflectwalk
+# github.com/nimajalali/go-force v0.0.0-20200831220737-454890ee2b7c
+## explicit; go 1.13
 # github.com/oklog/run v1.0.0
 ## explicit
 github.com/oklog/run

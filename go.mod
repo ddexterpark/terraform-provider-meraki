@@ -3,7 +3,7 @@ module github.com/ddexterpark/terraform-provider-meraki
 go 1.17
 
 require (
-	github.com/ddexterpark/dashboard-api-golang v0.0.0-20220308054301-d877655c8f85
+	github.com/ddexterpark/dashboard-api-golang v0.0.0-20220409062142-ef3c1f2f0856
 	github.com/go-openapi/runtime v0.23.2
 	github.com/hashicorp/terraform-plugin-docs v0.7.0
 	github.com/hashicorp/terraform-plugin-framework v0.6.0
@@ -60,6 +60,7 @@ require (
 	github.com/mitchellh/go-testing-interface v1.14.1 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
+	github.com/nimajalali/go-force v0.0.0-20200831220737-454890ee2b7c // indirect
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect

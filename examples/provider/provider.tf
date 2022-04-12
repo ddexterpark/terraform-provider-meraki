@@ -22,10 +22,24 @@ output "organizations" {
   value = data.meraki_organizations.list
 }
 
+// Get OrgId from above output and import any existing orgs:
+// terraform import meraki_organization.terraform1 "762234236932456591"
+// in order to modify resource you have to declare everything known about it in state
+// terraform show
 resource "meraki_organization" "terraform1" {
-  name = "terraform1"
+  cloud     = "North America"
+  id        = "762234236932456591"
+  name      = "terraform1"
+  url       = "https://n354.meraki.com/o/mtGUhcIf/manage/organization/overview"
+      // api = {
+  //        enabled = true
+  //      }
+  // licensing = {
+  //        model = "co-term"
+  //      }
 
-}
+ }
+
 
 // terraform output -json terraform1 | jq
 output "terraform1" {
@@ -33,4 +47,4 @@ output "terraform1" {
 }
 
 // Destroy an org after creation
-// terraform state rm 'meraki_organization.terraform1'
+// terraform apply -destroy -target='meraki_organization.terraform1'
