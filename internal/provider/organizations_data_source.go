@@ -10,7 +10,7 @@ import (
 
 type OrganizationsDataSourceType struct{}
 
-func (t OrganizationsDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (t OrganizationsDataSourceType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Organizations data source",
@@ -63,7 +63,7 @@ func (t OrganizationsDataSourceType) GetSchema(ctx context.Context) (tfsdk.Schem
 	}, nil
 }
 
-func (t OrganizationsDataSourceType) NewDataSource(ctx context.Context, in tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
+func (t OrganizationsDataSourceType) NewDataSource(_ context.Context, in tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
 	provider, diags := convertProviderType(in)
 
 	return OrganizationsDataSource{
