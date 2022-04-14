@@ -19,7 +19,6 @@ func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, 
 			"id": {
 				Type:     types.StringType,
 				Computed: true,
-				Optional: true,
 			},
 			"name": {
 				Type:     types.StringType,
@@ -29,35 +28,31 @@ func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, 
 			"url": {
 				Type:     types.StringType,
 				Computed: true,
-				Optional: true,
 			},
 			"cloud": {
 				Type:     types.StringType,
 				Computed: true,
-				Optional: true,
 			},
-
-			// TODO - AttributeName("api").AttributeName("enabled"): unsupported type json.Delim sent as tftypes.Bool
-			// "api": {
-			//				Optional: true,
-			//				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-			//					"enabled": {
-			//						Type:     types.BoolType,
-			//						Optional: true,
-			//					},
-			//				}),
-			//			},
-			//			"licensing": {
-			//				Computed: true,
-			//				Optional: true,
-			//				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-			//					"model": {
-			//						Type:     types.StringType,
-			//						Computed: true,
-			//						Optional: true,
-			//					},
-			//				}),
-			//			},
+			"api": {
+				Computed: true,
+				Optional: true,
+				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+					"enabled": {
+						Type:     types.BoolType,
+						Required: true,
+					},
+				}),
+			},
+			"licensing": {
+				Computed: true,
+				Optional: true,
+				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
+					"model": {
+						Type:     types.StringType,
+						Required: true,
+					},
+				}),
+			},
 		},
 	}, nil
 }
@@ -71,12 +66,12 @@ func (t OrganizationResourceType) NewResource(ctx context.Context, in tfsdk.Prov
 }
 
 type OrganizationData struct {
-	ID    types.String `tfsdk:"id"`
-	Name  types.String `tfsdk:"name"`
-	Url   types.String `tfsdk:"url"`
-	Cloud types.String `tfsdk:"cloud"`
-	//Api       Api          `tfsdk:"api"`
-	//Licensing Licensing    `tfsdk:"licensing"`
+	ID        types.String `tfsdk:"id"`
+	Name      types.String `tfsdk:"name"`
+	Url       types.String `tfsdk:"url"`
+	Cloud     types.String `tfsdk:"cloud"`
+	Api       *Api         `tfsdk:"api"`
+	Licensing *Licensing   `tfsdk:"licensing"`
 }
 
 type Api struct {
@@ -100,18 +95,14 @@ func (r merakiOrganizationResource) Create(ctx context.Context, req tfsdk.Create
 		)
 		return
 	}
-
 	var data OrganizationData
 
 	diags := req.Config.Get(ctx, &data)
-
-	tflog.Info(ctx, fmt.Sprintf("api response: %v", data))
-
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		resp.Diagnostics.AddError(
 			"Create Organization Error",
-			fmt.Sprintf("failed to retrieve config data: %v", data),
+			fmt.Sprintf("data: %v", data),
 		)
 		return
 	}
@@ -123,7 +114,11 @@ func (r merakiOrganizationResource) Create(ctx context.Context, req tfsdk.Create
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Create Organization Error",
-			fmt.Sprintf("Failed Create Organization Response: %s", err),
+			fmt.Sprintf("Config from .tf file: %v", data),
+		)
+		resp.Diagnostics.AddError(
+			"Create Organization Error",
+			fmt.Sprintf("Meraki API Response: %s", err),
 		)
 		return
 	}
@@ -131,14 +126,26 @@ func (r merakiOrganizationResource) Create(ctx context.Context, req tfsdk.Create
 	tflog.Debug(ctx, fmt.Sprintf("api response: %s", response))
 
 	// Map response body to resource schema attribute
-	data.ID.Value = response.GetPayload().ID
-	data.Name.Value = response.GetPayload().Name
-	data.Url.Value = response.GetPayload().URL
-	data.Cloud.Value = response.GetPayload().Cloud.Region.Name
+	data.ID = types.String{Value: response.GetPayload().ID}
+	data.Name = types.String{Value: response.GetPayload().Name}
+	data.Url = types.String{Value: response.GetPayload().URL}
+	data.Cloud = types.String{Value: response.GetPayload().Cloud.Region.Name}
 
-	// TODO - AttributeName("api").AttributeName("enabled"): unsupported type json.Delim sent as tftypes.Bool
-	//data.Licensing.Model.Value = response.GetPayload().Licensing.Model
-	//data.Api.Enabled.Value = response.GetPayload().API.Enabled
+	if licensing := response.GetPayload().Licensing; licensing != nil {
+		data.Licensing = &Licensing{
+			Model: types.String{Value: licensing.Model},
+		}
+	} else {
+		data.Licensing = &Licensing{Model: types.String{Null: true}}
+	}
+
+	if api := response.GetPayload().API; api != nil {
+		data.Api = &Api{
+			Enabled: types.Bool{Value: api.Enabled},
+		}
+	} else {
+		data.Api = &Api{Enabled: types.Bool{Null: true}}
+	}
 
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
@@ -169,14 +176,26 @@ func (r merakiOrganizationResource) Read(ctx context.Context, req tfsdk.ReadReso
 	tflog.Debug(ctx, fmt.Sprintf("api response: %s", response))
 
 	// Map response body to resource schema attribute
-	data.ID.Value = response.GetPayload().ID
-	data.Name.Value = response.GetPayload().Name
-	data.Url.Value = response.GetPayload().URL
-	data.Cloud.Value = response.GetPayload().Cloud.Region.Name
+	data.ID = types.String{Value: response.GetPayload().ID}
+	data.Name = types.String{Value: response.GetPayload().Name}
+	data.Url = types.String{Value: response.GetPayload().URL}
+	data.Cloud = types.String{Value: response.GetPayload().Cloud.Region.Name}
 
-	// TODO - AttributeName("api").AttributeName("enabled"): unsupported type json.Delim sent as tftypes.Bool
-	//data.Licensing.Model.Value = response.GetPayload().Licensing.Model
-	//data.Api.Enabled.Value = response.GetPayload().API.Enabled
+	if licensing := response.GetPayload().Licensing; licensing != nil {
+		data.Licensing = &Licensing{
+			Model: types.String{Value: licensing.Model},
+		}
+	} else {
+		data.Licensing = &Licensing{Model: types.String{Null: true}}
+	}
+
+	if api := response.GetPayload().API; api != nil {
+		data.Api = &Api{
+			Enabled: types.Bool{Value: api.Enabled},
+		}
+	} else {
+		data.Api = &Api{Enabled: types.Bool{Null: true}}
+	}
 
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
@@ -188,6 +207,10 @@ func (r merakiOrganizationResource) Update(ctx context.Context, req tfsdk.Update
 	diags := req.Plan.Get(ctx, &data)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
+		resp.Diagnostics.AddError(
+			"Update Organization Error",
+			fmt.Sprintf("data: %v", data),
+		)
 		return
 	}
 
@@ -196,8 +219,10 @@ func (r merakiOrganizationResource) Update(ctx context.Context, req tfsdk.Update
 	params.OrganizationID = data.ID.Value
 	params.UpdateOrganization.Name = data.Name.Value
 
-	// TODO - AttributeName("api").AttributeName("enabled"): unsupported type json.Delim sent as tftypes.Bool
-	// params.UpdateOrganization.API.Enabled = data.Api.Enabled.Value
+	var enabled = organizations.UpdateOrganizationParamsBodyAPI{
+		Enabled: data.Api.Enabled.Value,
+	}
+	params.UpdateOrganization.API = &enabled
 
 	response, err := r.provider.client.Organizations.UpdateOrganization(params, r.provider.transport.DefaultAuthentication)
 	if err != nil {
@@ -209,14 +234,26 @@ func (r merakiOrganizationResource) Update(ctx context.Context, req tfsdk.Update
 	}
 
 	// Map response body to resource schema attribute
-	data.ID.Value = response.GetPayload().ID
-	data.Name.Value = response.GetPayload().Name
-	data.Url.Value = response.GetPayload().URL
-	data.Cloud.Value = response.GetPayload().Cloud.Region.Name
+	data.ID = types.String{Value: response.GetPayload().ID}
+	data.Name = types.String{Value: response.GetPayload().Name}
+	data.Url = types.String{Value: response.GetPayload().URL}
+	data.Cloud = types.String{Value: response.GetPayload().Cloud.Region.Name}
 
-	// TODO - AttributeName("api").AttributeName("enabled"): unsupported type json.Delim sent as tftypes.Bool
-	//data.Licensing.Model.Value = response.GetPayload().Licensing.Model
-	//data.Api.Enabled.Value = response.GetPayload().API.Enabled
+	if licensing := response.GetPayload().Licensing; licensing != nil {
+		data.Licensing = &Licensing{
+			Model: types.String{Value: licensing.Model},
+		}
+	} else {
+		data.Licensing = &Licensing{Model: types.String{Null: true}}
+	}
+
+	if api := response.GetPayload().API; api != nil {
+		data.Api = &Api{
+			Enabled: types.Bool{Value: api.Enabled},
+		}
+	} else {
+		data.Api = &Api{Enabled: types.Bool{Null: true}}
+	}
 
 	diags = resp.State.Set(ctx, &data)
 	resp.Diagnostics.Append(diags...)
@@ -227,7 +264,6 @@ func (r merakiOrganizationResource) Delete(ctx context.Context, req tfsdk.Delete
 
 	diags := req.State.Get(ctx, &data)
 	resp.Diagnostics.Append(diags...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -243,7 +279,6 @@ func (r merakiOrganizationResource) Delete(ctx context.Context, req tfsdk.Delete
 		)
 		return
 	}
-
 	resp.State.RemoveResource(ctx)
 }
 

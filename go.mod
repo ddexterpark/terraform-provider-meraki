@@ -3,6 +3,7 @@ module github.com/ddexterpark/terraform-provider-meraki
 go 1.17
 
 require (
+	github.com/dave/jennifer v1.5.0
 	github.com/ddexterpark/dashboard-api-golang v0.0.0-20220409062142-ef3c1f2f0856
 	github.com/go-openapi/runtime v0.23.2
 	github.com/hashicorp/terraform-plugin-docs v0.7.0
