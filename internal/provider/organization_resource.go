@@ -226,7 +226,6 @@ func (r merakiOrganizationResource) Update(ctx context.Context, req tfsdk.Update
 	}
 	params.UpdateOrganization.API = &enabled
 
-	response, err := r.provider.client.Organizations.UpdateOrganization(params, r.provider.transport.DefaultAuthentication)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Update Organization Error",
