@@ -12,7 +12,26 @@ import (
 )
 
 type OrganizationResourceType struct{}
+type merakiOrganizationResource struct {
+	provider Provider
+}
+
 type OrganizationData struct {
+	ID        types.String `tfsdk:"id"`
+	Name      types.String `tfsdk:"name"`
+	Url       types.String `tfsdk:"url"`
+	Cloud     types.String `tfsdk:"cloud"`
+	Api       *Api         `tfsdk:"api"`
+	Licensing *Licensing   `tfsdk:"licensing"`
+}
+
+type Api struct {
+	Enabled types.Bool `tfsdk:"enabled"`
+}
+
+type Licensing struct {
+	Model types.String `tfsdk:"model"`
+}
 
 func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
@@ -59,37 +78,15 @@ func (t OrganizationResourceType) GetSchema(ctx context.Context) (tfsdk.Schema, 
 }
 
 func (t OrganizationResourceType) NewResource(ctx context.Context, in tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-	provider, diags := convertProviderType(in)
+	provider, diags := ConvertProviderType(in)
 
 	return merakiOrganizationResource{
 		provider: provider,
 	}, diags
 }
 
-type OrganizationData struct {
-	ID        types.String `tfsdk:"id"`
-	Name      types.String `tfsdk:"name"`
-	Url       types.String `tfsdk:"url"`
-	Cloud     types.String `tfsdk:"cloud"`
-	Api       *Api         `tfsdk:"api"`
-	Licensing *Licensing   `tfsdk:"licensing"`
-}
-
-type Api struct {
-	Enabled types.Bool `tfsdk:"enabled"`
-}
-
-type Licensing struct {
-	Model types.String `tfsdk:"model"`
-}
-
-type merakiOrganizationResource struct {
-	provider provider
-}
-
 func (r merakiOrganizationResource) Create(ctx context.Context, req tfsdk.CreateResourceRequest, resp *tfsdk.CreateResourceResponse) {
 
-	if !r.provider.configured {
 	if !r.provider.Configured {
 		resp.Diagnostics.AddError(
 			"Provider not configured",
@@ -108,11 +105,10 @@ func (r merakiOrganizationResource) Create(ctx context.Context, req tfsdk.Create
 		)
 		return
 	}
-
 	// Retrieve values from plan
 	params := organizations.NewCreateOrganizationParams()
 	params.CreateOrganization.Name = &data.Name.Value
-	response, err := r.provider.client.Organizations.CreateOrganization(params, r.provider.transport.DefaultAuthentication)
+	response, err := r.provider.Client.Organizations.CreateOrganization(params, r.provider.Transport.DefaultAuthentication)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Create Organization Error",
@@ -166,7 +162,7 @@ func (r merakiOrganizationResource) Read(ctx context.Context, req tfsdk.ReadReso
 	params := organizations.NewGetOrganizationParams()
 	params.OrganizationID = data.ID.Value
 
-	response, err := r.provider.client.Organizations.GetOrganization(params, r.provider.transport.DefaultAuthentication)
+	response, err := r.provider.Client.Organizations.GetOrganization(params, r.provider.Transport.DefaultAuthentication)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Read Organization Error",
@@ -226,6 +222,7 @@ func (r merakiOrganizationResource) Update(ctx context.Context, req tfsdk.Update
 	}
 	params.UpdateOrganization.API = &enabled
 
+	response, err := r.provider.Client.Organizations.UpdateOrganization(params, r.provider.Transport.DefaultAuthentication)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Update Organization Error",
@@ -272,7 +269,7 @@ func (r merakiOrganizationResource) Delete(ctx context.Context, req tfsdk.Delete
 	// Delete Organization
 	params := organizations.NewDeleteOrganizationParams()
 	params.OrganizationID = data.ID.Value
-	_, err := r.provider.client.Organizations.DeleteOrganization(params, r.provider.transport.DefaultAuthentication)
+	_, err := r.provider.Client.Organizations.DeleteOrganization(params, r.provider.Transport.DefaultAuthentication)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Delete Organization Error",

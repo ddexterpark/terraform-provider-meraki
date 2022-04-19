@@ -9,6 +9,32 @@ import (
 )
 
 type OrganizationsDataSourceType struct{}
+type OrganizationsDataSource struct {
+	provider Provider
+}
+
+// OrganizationsDataSourceData -
+type OrganizationsDataSourceData struct {
+	Organizations []OrganizationDataSourceData `tfsdk:"organizations"`
+}
+
+// OrganizationDataSourceData -
+type OrganizationDataSourceData struct {
+	ID        types.String           `tfsdk:"id"`
+	Name      types.String           `tfsdk:"name"`
+	Url       types.String           `tfsdk:"url"`
+	Cloud     types.String           `tfsdk:"cloud"`
+	Api       OrganizationsApi       `tfsdk:"api"`
+	Licensing OrganizationsLicensing `tfsdk:"licensing"`
+}
+
+type OrganizationsApi struct {
+	Enabled types.Bool `tfsdk:"enabled"`
+}
+
+type OrganizationsLicensing struct {
+	Model types.String `tfsdk:"model"`
+}
 
 func (t OrganizationsDataSourceType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
@@ -64,38 +90,11 @@ func (t OrganizationsDataSourceType) GetSchema(_ context.Context) (tfsdk.Schema,
 }
 
 func (t OrganizationsDataSourceType) NewDataSource(_ context.Context, in tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	provider, diags := convertProviderType(in)
+	provider, diags := ConvertProviderType(in)
 
 	return OrganizationsDataSource{
 		provider: provider,
 	}, diags
-}
-
-// OrganizationsDataSourceData -
-type OrganizationsDataSourceData struct {
-	Organizations []OrganizationDataSourceData `tfsdk:"organizations"`
-}
-
-// OrganizationDataSourceData -
-type OrganizationDataSourceData struct {
-	ID        types.String           `tfsdk:"id"`
-	Name      types.String           `tfsdk:"name"`
-	Url       types.String           `tfsdk:"url"`
-	Cloud     types.String           `tfsdk:"cloud"`
-	Api       OrganizationsApi       `tfsdk:"api"`
-	Licensing OrganizationsLicensing `tfsdk:"licensing"`
-}
-
-type OrganizationsApi struct {
-	Enabled types.Bool `tfsdk:"enabled"`
-}
-
-type OrganizationsLicensing struct {
-	Model types.String `tfsdk:"model"`
-}
-
-type OrganizationsDataSource struct {
-	provider provider
 }
 
 func (d OrganizationsDataSource) Read(ctx context.Context, req tfsdk.ReadDataSourceRequest, resp *tfsdk.ReadDataSourceResponse) {
@@ -108,7 +107,7 @@ func (d OrganizationsDataSource) Read(ctx context.Context, req tfsdk.ReadDataSou
 	}
 
 	params := organizations.NewGetOrganizationsParams()
-	response, err := d.provider.client.Organizations.GetOrganizations(params, d.provider.transport.DefaultAuthentication)
+	response, err := d.provider.Client.Organizations.GetOrganizations(params, d.provider.Transport.DefaultAuthentication)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error reading meraki organization",

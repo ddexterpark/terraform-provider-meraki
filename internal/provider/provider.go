@@ -14,34 +14,34 @@ import (
 
 func New(version string) func() tfsdk.Provider {
 	return func() tfsdk.Provider {
-		return &provider{
-			version: version,
+		return &Provider{
+			Version: version,
 		}
 	}
 }
 
-// provider satisfies the tfsdk.Provider interface and usually is included
+// Provider satisfies the tfsdk.Provider interface and usually is included
 // with all Resource and DataSource implementations.
-type provider struct {
+type Provider struct {
 	// client can contain the upstream provider SDK or HTTP client used to
 	// communicate with the upstream service. Resource and DataSource
 	// implementations can then make calls using this client.
 	// meraki-golang-api client
-	client    *apiclient.MerakiAPIGolang
-	transport *httptransport.Runtime
+	Client    *apiclient.MerakiAPIGolang
+	Transport *httptransport.Runtime
 
-	// configured is set to true at the end of the Configure method.
+	// Configured is set to true at the end of the Configure method.
 	// This can be used in Resource and DataSource implementations to verify
 	// that the provider was previously configured.
-	configured bool
+	Configured bool
 
 	// version is set to the provider version on release, "dev" when the
 	// provider is built and ran locally, and "test" when running acceptance
 	// testing.
-	version string
+	Version string
 }
 
-func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (p *Provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"path": {
@@ -70,7 +70,7 @@ type providerData struct {
 	ApiKey types.String `tfsdk:"apikey"`
 }
 
-func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
+func (p *Provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
 	// Retrieve provider data from configuration
 	var config providerData
 	diags := req.Config.Get(ctx, &config)
@@ -140,21 +140,21 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	}
 
 	// Create a new Meraki Dashboard API client and set it to the provider client
-	p.transport = httptransport.New(host, path, []string{"https"})
-	p.transport.DefaultAuthentication = httptransport.APIKeyAuth("X-Cisco-Meraki-API-Key", "header", apikey)
-	p.client = apiclient.New(p.transport, nil)
-	p.configured = true
+	p.Transport = httptransport.New(host, path, []string{"https"})
+	p.Transport.DefaultAuthentication = httptransport.APIKeyAuth("X-Cisco-Meraki-API-Key", "header", apikey)
+	p.Client = apiclient.New(p.Transport, nil)
+	p.Configured = true
 }
 
 // GetResources - Defines provider resources
-func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
+func (p *Provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"meraki_organization": OrganizationResourceType{},
 	}, nil
 }
 
 // GetDataSources - Defines provider data sources
-func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
+func (p *Provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
 	return map[string]tfsdk.DataSourceType{
 		"meraki_organizations": OrganizationsDataSourceType{},
 	}, nil
@@ -165,17 +165,17 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 // this helper can be skipped and the provider type can be directly type
 // asserted (e.g. provider: in.(*provider)), however using this can prevent
 // potential panics.
-func convertProviderType(in tfsdk.Provider) (provider, diag.Diagnostics) {
+func ConvertProviderType(in tfsdk.Provider) (Provider, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	p, ok := in.(*provider)
+	p, ok := in.(*Provider)
 
 	if !ok {
 		diags.AddError(
 			"Unexpected Provider Instance Type",
 			fmt.Sprintf("While creating the data source or resource, an unexpected provider type (%T) was received. This is always a bug in the provider code and should be reported to the provider developers.", p),
 		)
-		return provider{}, diags
+		return Provider{}, diags
 	}
 
 	if p == nil {
@@ -183,7 +183,7 @@ func convertProviderType(in tfsdk.Provider) (provider, diag.Diagnostics) {
 			"Unexpected Provider Instance Type",
 			"While creating the data source or resource, an unexpected empty provider instance was received. This is always a bug in the provider code and should be reported to the provider developers.",
 		)
-		return provider{}, diags
+		return Provider{}, diags
 	}
 
 	return *p, diags
