@@ -3,7 +3,6 @@ module github.com/ddexterpark/terraform-provider-meraki
 go 1.17
 
 require (
-	github.com/dave/jennifer v1.5.0
 	github.com/ddexterpark/dashboard-api-golang v0.0.0-20220409062142-ef3c1f2f0856
 	github.com/go-openapi/runtime v0.23.2
 	github.com/hashicorp/terraform-plugin-docs v0.7.0
@@ -21,6 +20,7 @@ require (
 	github.com/armon/go-radix v0.0.0-20180808171621-7fddfc383310 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
+	github.com/dave/jennifer v1.5.0 // indirect
 	github.com/fatih/color v1.7.0 // indirect
 	github.com/go-openapi/analysis v0.21.2 // indirect
 	github.com/go-openapi/errors v0.20.2 // indirect

@@ -24,7 +24,6 @@ github.com/asaskevich/govalidator
 github.com/bgentry/speakeasy
 # github.com/dave/jennifer v1.5.0
 ## explicit; go 1.15
-github.com/dave/jennifer/jen
 # github.com/ddexterpark/dashboard-api-golang v0.0.0-20220409062142-ef3c1f2f0856
 ## explicit; go 1.14
 github.com/ddexterpark/dashboard-api-golang/client

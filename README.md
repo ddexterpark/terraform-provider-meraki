@@ -29,6 +29,11 @@ Once you've written your provider, you'll want to [publish it on the Terraform R
 go install
 ```
 
+(For provider developers only) modify your tf path to local and use:
+```shell
+go mod vendor && go install
+```
+
 ## Adding Dependencies
 
 This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
