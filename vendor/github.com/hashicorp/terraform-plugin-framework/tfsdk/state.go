@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/internal/logging"
 	"github.com/hashicorp/terraform-plugin-framework/internal/reflect"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
@@ -25,6 +26,8 @@ func (s State) Get(ctx context.Context, target interface{}) diag.Diagnostics {
 // GetAttribute retrieves the attribute found at `path` and populates the
 // `target` with the value.
 func (s State) GetAttribute(ctx context.Context, path *tftypes.AttributePath, target interface{}) diag.Diagnostics {
+	ctx = logging.FrameworkWithAttributePath(ctx, path.String())
+
 	attrValue, diags := s.getAttributeValue(ctx, path)
 
 	if diags.HasError() {
@@ -92,7 +95,10 @@ func (s State) getAttributeValue(ctx context.Context, path *tftypes.AttributePat
 	// Reference: https://github.com/hashicorp/terraform-plugin-framework/issues/186
 
 	if attrTypeWithValidate, ok := attrType.(attr.TypeWithValidate); ok {
+		logging.FrameworkTrace(ctx, "Type implements TypeWithValidate")
+		logging.FrameworkDebug(ctx, "Calling provider defined Type Validate")
 		diags.Append(attrTypeWithValidate.Validate(ctx, tfValue, path)...)
+		logging.FrameworkDebug(ctx, "Called provider defined Type Validate")
 
 		if diags.HasError() {
 			return nil, diags
@@ -131,7 +137,7 @@ func (s *State) Set(ctx context.Context, val interface{}) diag.Diagnostics {
 		return diags
 	}
 
-	newStateVal, err := newStateAttrValue.ToTerraformValue(ctx)
+	newState, err := newStateAttrValue.ToTerraformValue(ctx)
 	if err != nil {
 		err = fmt.Errorf("error running ToTerraformValue on state: %w", err)
 		diags.AddError(
@@ -140,8 +146,6 @@ func (s *State) Set(ctx context.Context, val interface{}) diag.Diagnostics {
 		)
 		return diags
 	}
-
-	newState := tftypes.NewValue(s.Schema.AttributeType().TerraformType(ctx), newStateVal)
 
 	s.Raw = newState
 	return diags
@@ -157,6 +161,8 @@ func (s *State) Set(ctx context.Context, val interface{}) diag.Diagnostics {
 // Lists can only have the next element added according to the current length.
 func (s *State) SetAttribute(ctx context.Context, path *tftypes.AttributePath, val interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
+
+	ctx = logging.FrameworkWithAttributePath(ctx, path.String())
 
 	attrType, err := s.Schema.AttributeTypeAtPath(path)
 	if err != nil {
@@ -176,7 +182,7 @@ func (s *State) SetAttribute(ctx context.Context, path *tftypes.AttributePath, v
 		return diags
 	}
 
-	newTfVal, err := newVal.ToTerraformValue(ctx)
+	tfVal, err := newVal.ToTerraformValue(ctx)
 	if err != nil {
 		err = fmt.Errorf("error running ToTerraformValue on new state value: %w", err)
 		diags.AddAttributeError(
@@ -187,10 +193,11 @@ func (s *State) SetAttribute(ctx context.Context, path *tftypes.AttributePath, v
 		return diags
 	}
 
-	tfVal := tftypes.NewValue(attrType.TerraformType(ctx), newTfVal)
-
 	if attrTypeWithValidate, ok := attrType.(attr.TypeWithValidate); ok {
+		logging.FrameworkTrace(ctx, "Type implements TypeWithValidate")
+		logging.FrameworkDebug(ctx, "Calling provider defined Type Validate")
 		diags.Append(attrTypeWithValidate.Validate(ctx, tfVal, path)...)
+		logging.FrameworkDebug(ctx, "Called provider defined Type Validate")
 
 		if diags.HasError() {
 			return diags
@@ -220,7 +227,7 @@ func (s *State) SetAttribute(ctx context.Context, path *tftypes.AttributePath, v
 
 // pathExists walks the current state and returns true if the path can be reached.
 // The value at the path may be null or unknown.
-func (s State) pathExists(ctx context.Context, path *tftypes.AttributePath) (bool, diag.Diagnostics) {
+func (s State) pathExists(_ context.Context, path *tftypes.AttributePath) (bool, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	_, remaining, err := tftypes.WalkAttributePath(s.Raw, path)
@@ -310,7 +317,7 @@ func (s State) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attr
 	}
 
 	var childValueDiags diag.Diagnostics
-	childStep := path.Steps()[len(path.Steps())-1]
+	childStep := path.LastStep()
 	parentValue, childValueDiags = upsertChildValue(ctx, parentPath, parentValue, childStep, tfVal)
 	diags.Append(childValueDiags...)
 
@@ -319,7 +326,10 @@ func (s State) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attr
 	}
 
 	if attrTypeWithValidate, ok := parentAttrType.(attr.TypeWithValidate); ok {
+		logging.FrameworkTrace(ctx, "Type implements TypeWithValidate")
+		logging.FrameworkDebug(ctx, "Calling provider defined Type Validate")
 		diags.Append(attrTypeWithValidate.Validate(ctx, parentValue, parentPath)...)
+		logging.FrameworkDebug(ctx, "Called provider defined Type Validate")
 
 		if diags.HasError() {
 			return nil, diags
@@ -330,6 +340,9 @@ func (s State) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attr
 }
 
 // RemoveResource removes the entire resource from state.
+//
+// If a Resource type Delete method is completed without error, this is
+// automatically called on the DeleteResourceResponse.State.
 func (s *State) RemoveResource(ctx context.Context) {
 	s.Raw = tftypes.NewValue(s.Schema.TerraformType(ctx), nil)
 }
