@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/internal/logging"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
@@ -139,15 +140,7 @@ func (r RequiresReplaceModifier) Modify(ctx context.Context, req ModifyAttribute
 		return
 	}
 
-	configRaw, err := req.AttributeConfig.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting config value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeConfig.Type(ctx), err),
-		)
-		return
-	}
-	if configRaw == nil && attrSchema.Computed {
+	if req.AttributeConfig.IsNull() && attrSchema.Computed {
 		// if the config is null and the attribute is computed, this
 		// could be an out of band change, don't require replace
 		return
@@ -279,15 +272,7 @@ func (r RequiresReplaceIfModifier) Modify(ctx context.Context, req ModifyAttribu
 		return
 	}
 
-	configRaw, err := req.AttributeConfig.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting config value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeConfig.Type(ctx), err),
-		)
-		return
-	}
-	if configRaw == nil && attrSchema.Computed {
+	if req.AttributeConfig.IsNull() && attrSchema.Computed {
 		// if the config is null and the attribute is computed, this
 		// could be an out of band change, don't require replace
 		return
@@ -308,7 +293,7 @@ func (r RequiresReplaceIfModifier) Modify(ctx context.Context, req ModifyAttribu
 	if res {
 		resp.RequiresReplace = true
 	} else if resp.RequiresReplace {
-		// TODO: log that we didn't override the result
+		logging.FrameworkDebug(ctx, "Keeping previous attribute replacement requirement")
 	}
 }
 
@@ -344,47 +329,18 @@ func (r UseStateForUnknownModifier) Modify(ctx context.Context, req ModifyAttrib
 		return
 	}
 
-	val, err := req.AttributeState.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting state value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeState.Type(ctx), err),
-		)
-		return
-	}
-
 	// if we have no state value, there's nothing to preserve
-	if val == nil {
+	if req.AttributeState.IsNull() {
 		return
 	}
 
-	val, err = resp.AttributePlan.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting plan value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", resp.AttributePlan.Type(ctx), err),
-		)
+	// if it's not planned to be the unknown value, stick with the concrete plan
+	if !resp.AttributePlan.IsUnknown() {
 		return
 	}
 
-	// if it's not planned to be the unknown value, stick with
-	// the concrete plan
-	if val != tftypes.UnknownValue {
-		return
-	}
-
-	val, err = req.AttributeConfig.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting config value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeConfig.Type(ctx), err),
-		)
-		return
-	}
-
-	// if the config is the unknown value, use the unknown value
-	// otherwise, interpolation gets messed up
-	if val == tftypes.UnknownValue {
+	// if the config is the unknown value, use the unknown value otherwise, interpolation gets messed up
+	if req.AttributeConfig.IsUnknown() {
 		return
 	}
 

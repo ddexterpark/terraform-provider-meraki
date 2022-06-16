@@ -2,9 +2,14 @@ package types
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+)
+
+var (
+	_ attr.Value = Bool{}
 )
 
 func boolValueFromTerraform(ctx context.Context, in tftypes.Value) (attr.Value, error) {
@@ -26,8 +31,6 @@ func boolValueFromTerraform(ctx context.Context, in tftypes.Value) (attr.Value, 
 	return Bool{Value: b}, nil
 }
 
-var _ attr.Value = Bool{}
-
 // Bool represents a boolean value.
 type Bool struct {
 	// Unknown will be true if the value is not yet known.
@@ -47,17 +50,18 @@ func (b Bool) Type(_ context.Context) attr.Type {
 	return BoolType
 }
 
-// ToTerraformValue returns the data contained in the *Bool as a bool. If
-// Unknown is true, it returns a tftypes.UnknownValue. If Null is true, it
-// returns nil.
-func (b Bool) ToTerraformValue(_ context.Context) (interface{}, error) {
+// ToTerraformValue returns the data contained in the *Bool as a tftypes.Value.
+func (b Bool) ToTerraformValue(_ context.Context) (tftypes.Value, error) {
 	if b.Null {
-		return nil, nil
+		return tftypes.NewValue(tftypes.Bool, nil), nil
 	}
 	if b.Unknown {
-		return tftypes.UnknownValue, nil
+		return tftypes.NewValue(tftypes.Bool, tftypes.UnknownValue), nil
 	}
-	return b.Value, nil
+	if err := tftypes.ValidateValue(tftypes.Bool, b.Value); err != nil {
+		return tftypes.NewValue(tftypes.Bool, tftypes.UnknownValue), err
+	}
+	return tftypes.NewValue(tftypes.Bool, b.Value), nil
 }
 
 // Equal returns true if `other` is a *Bool and has the same value as `b`.
@@ -73,4 +77,24 @@ func (b Bool) Equal(other attr.Value) bool {
 		return false
 	}
 	return b.Value == o.Value
+}
+
+func (b Bool) IsNull() bool {
+	return b.Null
+}
+
+func (b Bool) IsUnknown() bool {
+	return b.Unknown
+}
+
+func (b Bool) String() string {
+	if b.Unknown {
+		return attr.UnknownValueString
+	}
+
+	if b.Null {
+		return attr.NullValueString
+	}
+
+	return fmt.Sprintf("%t", b.Value)
 }

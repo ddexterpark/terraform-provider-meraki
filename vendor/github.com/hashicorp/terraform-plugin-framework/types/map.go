@@ -3,11 +3,18 @@ package types
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/internal/reflect"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+)
+
+var (
+	_ attr.Type  = MapType{}
+	_ attr.Value = &Map{}
 )
 
 // MapType is an AttributeType representing a map of values. All values must
@@ -137,33 +144,17 @@ type Map struct {
 func (m Map) ElementsAs(ctx context.Context, target interface{}, allowUnhandled bool) diag.Diagnostics {
 	// we need a tftypes.Value for this Map to be able to use it with our
 	// reflection code
-	values := make(map[string]tftypes.Value, len(m.Elems))
-	for key, elem := range m.Elems {
-		val, err := elem.ToTerraformValue(ctx)
-		if err != nil {
-			err := fmt.Errorf("error getting Terraform value for element %q: %w", key, err)
-			return diag.Diagnostics{
-				diag.NewErrorDiagnostic(
-					"Map Element Conversion Error",
-					"An unexpected error was encountered trying to convert map elements. This is always an error in the provider. Please report the following to the provider developer:\n\n"+err.Error(),
-				),
-			}
+	val, err := m.ToTerraformValue(ctx)
+	if err != nil {
+		err := fmt.Errorf("error getting Terraform value for map: %w", err)
+		return diag.Diagnostics{
+			diag.NewErrorDiagnostic(
+				"Map Conversion Error",
+				"An unexpected error was encountered trying to convert the map into an equivalent Terraform value. This is always an error in the provider. Please report the following to the provider developer:\n\n"+err.Error(),
+			),
 		}
-		err = tftypes.ValidateValue(m.ElemType.TerraformType(ctx), val)
-		if err != nil {
-			err := fmt.Errorf("error using created Terraform value for element %q: %w", key, err)
-			return diag.Diagnostics{
-				diag.NewErrorDiagnostic(
-					"Map Element Conversion Error",
-					"An unexpected error was encountered trying to convert map elements. This is always an error in the provider. Please report the following to the provider developer:\n\n"+err.Error(),
-				),
-			}
-		}
-		values[key] = tftypes.NewValue(m.ElemType.TerraformType(ctx), val)
 	}
-	return reflect.Into(ctx, MapType{ElemType: m.ElemType}, tftypes.NewValue(tftypes.Map{
-		ElementType: m.ElemType.TerraformType(ctx),
-	}, values), target, reflect.Options{
+	return reflect.Into(ctx, MapType{ElemType: m.ElemType}, val, target, reflect.Options{
 		UnhandledNullAsEmpty:    allowUnhandled,
 		UnhandledUnknownAsEmpty: allowUnhandled,
 	})
@@ -174,28 +165,31 @@ func (m Map) Type(ctx context.Context) attr.Type {
 	return MapType{ElemType: m.ElemType}
 }
 
-// ToTerraformValue returns the data contained in the AttributeValue as a Go
-// type that tftypes.NewValue will accept.
-func (m Map) ToTerraformValue(ctx context.Context) (interface{}, error) {
+// ToTerraformValue returns the data contained in the AttributeValue as a
+// tftypes.Value.
+func (m Map) ToTerraformValue(ctx context.Context) (tftypes.Value, error) {
+	if m.ElemType == nil {
+		return tftypes.Value{}, fmt.Errorf("cannot convert Map to tftypes.Value if ElemType field is not set")
+	}
+	mapType := tftypes.Map{ElementType: m.ElemType.TerraformType(ctx)}
 	if m.Unknown {
-		return tftypes.UnknownValue, nil
+		return tftypes.NewValue(mapType, tftypes.UnknownValue), nil
 	}
 	if m.Null {
-		return nil, nil
+		return tftypes.NewValue(mapType, nil), nil
 	}
 	vals := make(map[string]tftypes.Value, len(m.Elems))
 	for key, elem := range m.Elems {
 		val, err := elem.ToTerraformValue(ctx)
 		if err != nil {
-			return nil, err
+			return tftypes.NewValue(mapType, tftypes.UnknownValue), err
 		}
-		err = tftypes.ValidateValue(m.ElemType.TerraformType(ctx), val)
-		if err != nil {
-			return nil, err
-		}
-		vals[key] = tftypes.NewValue(m.ElemType.TerraformType(ctx), val)
+		vals[key] = val
 	}
-	return vals, nil
+	if err := tftypes.ValidateValue(mapType, vals); err != nil {
+		return tftypes.NewValue(mapType, tftypes.UnknownValue), err
+	}
+	return tftypes.NewValue(mapType, vals), nil
 }
 
 // Equal must return true if the AttributeValue is considered semantically
@@ -227,4 +221,42 @@ func (m Map) Equal(o attr.Value) bool {
 		}
 	}
 	return true
+}
+
+func (m Map) IsNull() bool {
+	return m.Null
+}
+
+func (m Map) IsUnknown() bool {
+	return m.Unknown
+}
+
+func (m Map) String() string {
+	if m.Unknown {
+		return attr.UnknownValueString
+	}
+
+	if m.Null {
+		return attr.NullValueString
+	}
+
+	// We want the output to be consistent, so we sort the output by key
+	keys := make([]string, 0, len(m.Elems))
+	for k := range m.Elems {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var res strings.Builder
+
+	res.WriteString("{")
+	for i, k := range keys {
+		if i != 0 {
+			res.WriteString(",")
+		}
+		res.WriteString(fmt.Sprintf("%q:%s", k, m.Elems[k].String()))
+	}
+	res.WriteString("}")
+
+	return res.String()
 }
