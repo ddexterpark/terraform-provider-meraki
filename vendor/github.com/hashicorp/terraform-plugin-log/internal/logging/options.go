@@ -3,6 +3,7 @@ package logging
 import (
 	"io"
 	"os"
+	"regexp"
 
 	"github.com/hashicorp/go-hclog"
 )
@@ -22,6 +23,11 @@ type LoggerOpts struct {
 	// of the logging statement or not.
 	IncludeLocation bool
 
+	// AdditionalLocationOffset is the number of additional stack levels to
+	// skip when finding the file and line information for the log line.
+	// Defaults to 1 to account for the tflog and tfsdklog logging functions.
+	AdditionalLocationOffset int
+
 	// Output dictates where logs are written to. Output should only ever
 	// be set by tflog or tfsdklog, never by SDK authors or provider
 	// developers. Where logs get written to is complex and delicate and
@@ -34,22 +40,118 @@ type LoggerOpts struct {
 	// tfsdklog; providers and SDKs should always include the time logs
 	// were written as part of the log.
 	IncludeTime bool
+
+	// IncludeRootFields indicates whether a new subsystem logger should
+	// copy existing fields from the root logger. This is only performed
+	// at the time of new subsystem creation.
+	IncludeRootFields bool
+
+	// OmitLogWithFieldKeys indicates that the logger should omit to write
+	// any log when any of the given keys is found within the arguments.
+	//
+	// Example:
+	//
+	//   OmitLogWithFieldKeys = `['foo', 'baz']`
+	//
+	//   log1 = `{ msg = "...", args = { 'foo', '...', 'bar', '...' }`   -> omitted
+	//   log2 = `{ msg = "...", args = { 'bar', '...' }`                 -> printed
+	//   log3 = `{ msg = "...", args = { 'baz`', '...', 'boo', '...' }`  -> omitted
+	//
+	OmitLogWithFieldKeys []string
+
+	// OmitLogWithMessageRegex indicates that the logger should omit to write
+	// any log that matches any of the given *regexp.Regexp.
+	//
+	// Example:
+	//
+	//   OmitLogWithMessageRegex = `[regexp.MustCompile("(foo|bar)")]`
+	//
+	//   log1 = `{ msg = "banana apple foo", args = {...}`     -> omitted
+	//   log2 = `{ msg = "pineapple mango", args = {...}`      -> printed
+	//   log3 = `{ msg = "pineapple mango bar", args = {...}`  -> omitted
+	//
+	OmitLogWithMessageRegex []*regexp.Regexp
+
+	// OmitLogWithMessageStrings indicates that the logger should omit to write
+	// any log that matches any of the given string.
+	//
+	// Example:
+	//
+	//   OmitLogWithMessageStrings = `['foo', 'bar']`
+	//
+	//   log1 = `{ msg = "banana apple foo", args = {...}`     -> omitted
+	//   log2 = `{ msg = "pineapple mango", args = {...}`      -> printed
+	//   log3 = `{ msg = "pineapple mango bar", args = {...}`  -> omitted
+	//
+	OmitLogWithMessageStrings []string
+
+	// MaskFieldValueWithFieldKeys indicates that the logger should mask with asterisks (`*`)
+	// any argument value where the key matches one of the given keys.
+	//
+	// Example:
+	//
+	//   MaskFieldValueWithFieldKeys = `['foo', 'baz']`
+	//
+	//   log1 = `{ msg = "...", args = { 'foo', '***', 'bar', '...' }`   -> masked value
+	//   log2 = `{ msg = "...", args = { 'bar', '...' }`                 -> as-is value
+	//   log3 = `{ msg = "...", args = { 'baz`', '***', 'boo', '...' }`  -> masked value
+	//
+	MaskFieldValueWithFieldKeys []string
+
+	// MaskMessageRegex indicates that the logger should replace, within
+	// a log message, the portion matching one of the given *regexp.Regexp.
+	//
+	// Example:
+	//
+	//   MaskMessageRegex = `[regexp.MustCompile("(foo|bar)")]`
+	//
+	//   log1 = `{ msg = "banana apple ***", args = {...}`     -> masked portion
+	//   log2 = `{ msg = "pineapple mango", args = {...}`      -> as-is
+	//   log3 = `{ msg = "pineapple mango ***", args = {...}`  -> masked portion
+	//
+	MaskMessageRegex []*regexp.Regexp
+
+	// MaskMessageStrings indicates that the logger should replace, within
+	// a log message, the portion matching one of the given strings.
+	//
+	// Example:
+	//
+	//   MaskMessageStrings = `['foo', 'bar']`
+	//
+	//   log1 = `{ msg = "banana apple ***", args = {...}`     -> masked portion
+	//   log2 = `{ msg = "pineapple mango", args = {...}`      -> as-is
+	//   log3 = `{ msg = "pineapple mango ***", args = {...}`  -> masked portion
+	//
+	MaskMessageStrings []string
 }
 
 // ApplyLoggerOpts generates a LoggerOpts out of a list of Option
-// implementations. By default, IncludeLocation is true, IncludeTime is true,
-// and Output is os.Stderr.
+// implementations. By default, AdditionalLocationOffset is 1, IncludeLocation
+// is true, IncludeTime is true, and Output is os.Stderr.
 func ApplyLoggerOpts(opts ...Option) LoggerOpts {
 	// set some defaults
 	l := LoggerOpts{
-		IncludeLocation: true,
-		IncludeTime:     true,
-		Output:          os.Stderr,
+		AdditionalLocationOffset: 1,
+		IncludeLocation:          true,
+		IncludeTime:              true,
+		Output:                   os.Stderr,
 	}
 	for _, opt := range opts {
 		l = opt(l)
 	}
 	return l
+}
+
+// WithAdditionalLocationOffset sets the WithAdditionalLocationOffset
+// configuration option, allowing implementations to fix location information
+// when implementing helper functions. The default offset of 1 is automatically
+// added to the provided value to account for the tflog and tfsdk logging
+// functions.
+func WithAdditionalLocationOffset(additionalLocationOffset int) Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.AdditionalLocationOffset = additionalLocationOffset + 1
+		return l
+	}
 }
 
 // WithOutput sets the Output configuration option, controlling where logs get
@@ -63,12 +165,79 @@ func WithOutput(output io.Writer) Option {
 	}
 }
 
+// WithRootFields enables the copying of root logger fields to a new subsystem
+// logger during creation.
+func WithRootFields() Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.IncludeRootFields = true
+		return l
+	}
+}
+
+// WithoutLocation disables the location included with logging statements. It
+// should only ever be used to make log output deterministic when testing
+// terraform-plugin-log.
+func WithoutLocation() Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.IncludeLocation = false
+		return l
+	}
+}
+
 // WithoutTimestamp disables the timestamp included with logging statements. It
 // should only ever be used to make log output deterministic when testing
 // terraform-plugin-log.
 func WithoutTimestamp() Option {
 	return func(l LoggerOpts) LoggerOpts {
 		l.IncludeTime = false
+		return l
+	}
+}
+
+// WithOmitLogWithFieldKeys appends keys to the LoggerOpts.OmitLogWithFieldKeys field.
+func WithOmitLogWithFieldKeys(keys ...string) Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.OmitLogWithFieldKeys = append(l.OmitLogWithFieldKeys, keys...)
+		return l
+	}
+}
+
+// WithOmitLogWithMessageRegex appends *regexp.Regexp to the LoggerOpts.OmitLogWithMessageRegex field.
+func WithOmitLogWithMessageRegex(expressions ...*regexp.Regexp) Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.OmitLogWithMessageRegex = append(l.OmitLogWithMessageRegex, expressions...)
+		return l
+	}
+}
+
+// WithOmitLogWithMessageStrings appends string to the LoggerOpts.OmitLogWithMessageStrings field.
+func WithOmitLogWithMessageStrings(matchingStrings ...string) Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.OmitLogWithMessageStrings = append(l.OmitLogWithMessageStrings, matchingStrings...)
+		return l
+	}
+}
+
+// WithMaskFieldValueWithFieldKeys appends keys to the LoggerOpts.MaskFieldValueWithFieldKeys field.
+func WithMaskFieldValueWithFieldKeys(keys ...string) Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.MaskFieldValueWithFieldKeys = append(l.MaskFieldValueWithFieldKeys, keys...)
+		return l
+	}
+}
+
+// WithMaskMessageRegex appends *regexp.Regexp to the LoggerOpts.MaskMessageRegex field.
+func WithMaskMessageRegex(expressions ...*regexp.Regexp) Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.MaskMessageRegex = append(l.MaskMessageRegex, expressions...)
+		return l
+	}
+}
+
+// WithMaskMessageStrings appends string to the LoggerOpts.MaskMessageStrings field.
+func WithMaskMessageStrings(matchingStrings ...string) Option {
+	return func(l LoggerOpts) LoggerOpts {
+		l.MaskMessageStrings = append(l.MaskMessageStrings, matchingStrings...)
 		return l
 	}
 }
