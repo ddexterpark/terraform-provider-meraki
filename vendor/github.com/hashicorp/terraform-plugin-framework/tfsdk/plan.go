@@ -6,8 +6,12 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/attr/xattr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/internal/logging"
 	"github.com/hashicorp/terraform-plugin-framework/internal/reflect"
+	"github.com/hashicorp/terraform-plugin-framework/internal/totftypes"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
@@ -24,7 +28,9 @@ func (p Plan) Get(ctx context.Context, target interface{}) diag.Diagnostics {
 
 // GetAttribute retrieves the attribute found at `path` and populates the
 // `target` with the value.
-func (p Plan) GetAttribute(ctx context.Context, path *tftypes.AttributePath, target interface{}) diag.Diagnostics {
+func (p Plan) GetAttribute(ctx context.Context, path path.Path, target interface{}) diag.Diagnostics {
+	ctx = logging.FrameworkWithAttributePath(ctx, path.String())
+
 	attrValue, diags := p.getAttributeValue(ctx, path)
 
 	if diags.HasError() {
@@ -56,10 +62,18 @@ func (p Plan) GetAttribute(ctx context.Context, path *tftypes.AttributePath, tar
 // getAttributeValue retrieves the attribute found at `path` and returns it as an
 // attr.Value. Consumers should assert the type of the returned value with the
 // desired attr.Type.
-func (p Plan) getAttributeValue(ctx context.Context, path *tftypes.AttributePath) (attr.Value, diag.Diagnostics) {
+func (p Plan) getAttributeValue(ctx context.Context, path path.Path) (attr.Value, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	attrType, err := p.Schema.AttributeTypeAtPath(path)
+	tftypesPath, tftypesPathDiags := totftypes.AttributePath(ctx, path)
+
+	diags.Append(tftypesPathDiags...)
+
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	attrType, err := p.Schema.AttributeTypeAtPath(tftypesPath)
 	if err != nil {
 		err = fmt.Errorf("error getting attribute type in schema: %w", err)
 		diags.AddAttributeError(
@@ -75,7 +89,7 @@ func (p Plan) getAttributeValue(ctx context.Context, path *tftypes.AttributePath
 		return nil, nil
 	}
 
-	tfValue, err := p.terraformValueAtPath(path)
+	tfValue, err := p.terraformValueAtPath(tftypesPath)
 
 	// Ignoring ErrInvalidStep will allow this method to return a null value of the type.
 	if err != nil && !errors.Is(err, tftypes.ErrInvalidStep) {
@@ -91,8 +105,11 @@ func (p Plan) getAttributeValue(ctx context.Context, path *tftypes.AttributePath
 	//       If found, convert this value to an unknown value.
 	// Reference: https://github.com/hashicorp/terraform-plugin-framework/issues/186
 
-	if attrTypeWithValidate, ok := attrType.(attr.TypeWithValidate); ok {
+	if attrTypeWithValidate, ok := attrType.(xattr.TypeWithValidate); ok {
+		logging.FrameworkTrace(ctx, "Type implements TypeWithValidate")
+		logging.FrameworkDebug(ctx, "Calling provider defined Type Validate")
 		diags.Append(attrTypeWithValidate.Validate(ctx, tfValue, path)...)
+		logging.FrameworkDebug(ctx, "Called provider defined Type Validate")
 
 		if diags.HasError() {
 			return nil, diags
@@ -113,16 +130,25 @@ func (p Plan) getAttributeValue(ctx context.Context, path *tftypes.AttributePath
 	return attrValue, diags
 }
 
+// PathMatches returns all matching path.Paths from the given path.Expression.
+//
+// If a parent path is null or unknown, which would prevent a full expression
+// from matching, the parent path is returned rather than no match to prevent
+// false positives.
+func (p Plan) PathMatches(ctx context.Context, pathExpr path.Expression) (path.Paths, diag.Diagnostics) {
+	return pathMatches(ctx, p.Schema, p.Raw, pathExpr)
+}
+
 // Set populates the entire plan using the supplied Go value. The value `val`
 // should be a struct whose values have one of the attr.Value types. Each field
 // must be tagged with the corresponding schema field.
 func (p *Plan) Set(ctx context.Context, val interface{}) diag.Diagnostics {
-	newPlanAttrValue, diags := reflect.FromValue(ctx, p.Schema.AttributeType(), val, tftypes.NewAttributePath())
+	newPlanAttrValue, diags := reflect.FromValue(ctx, p.Schema.AttributeType(), val, path.Empty())
 	if diags.HasError() {
 		return diags
 	}
 
-	newPlanVal, err := newPlanAttrValue.ToTerraformValue(ctx)
+	newPlan, err := newPlanAttrValue.ToTerraformValue(ctx)
 	if err != nil {
 		err = fmt.Errorf("error running ToTerraformValue on plan: %w", err)
 		diags.AddError(
@@ -131,8 +157,6 @@ func (p *Plan) Set(ctx context.Context, val interface{}) diag.Diagnostics {
 		)
 		return diags
 	}
-
-	newPlan := tftypes.NewValue(p.Schema.AttributeType().TerraformType(ctx), newPlanVal)
 
 	p.Raw = newPlan
 	return diags
@@ -146,10 +170,20 @@ func (p *Plan) Set(ctx context.Context, val interface{}) diag.Diagnostics {
 // paths as necessary.
 //
 // Lists can only have the next element added according to the current length.
-func (p *Plan) SetAttribute(ctx context.Context, path *tftypes.AttributePath, val interface{}) diag.Diagnostics {
+func (p *Plan) SetAttribute(ctx context.Context, path path.Path, val interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 
-	attrType, err := p.Schema.AttributeTypeAtPath(path)
+	ctx = logging.FrameworkWithAttributePath(ctx, path.String())
+
+	tftypesPath, tftypesPathDiags := totftypes.AttributePath(ctx, path)
+
+	diags.Append(tftypesPathDiags...)
+
+	if diags.HasError() {
+		return diags
+	}
+
+	attrType, err := p.Schema.AttributeTypeAtPath(tftypesPath)
 	if err != nil {
 		err = fmt.Errorf("error getting attribute type in schema: %w", err)
 		diags.AddAttributeError(
@@ -167,7 +201,7 @@ func (p *Plan) SetAttribute(ctx context.Context, path *tftypes.AttributePath, va
 		return diags
 	}
 
-	newTfVal, err := newVal.ToTerraformValue(ctx)
+	tfVal, err := newVal.ToTerraformValue(ctx)
 	if err != nil {
 		err = fmt.Errorf("error running ToTerraformValue on new plan value: %w", err)
 		diags.AddAttributeError(
@@ -178,10 +212,11 @@ func (p *Plan) SetAttribute(ctx context.Context, path *tftypes.AttributePath, va
 		return diags
 	}
 
-	tfVal := tftypes.NewValue(attrType.TerraformType(ctx), newTfVal)
-
-	if attrTypeWithValidate, ok := attrType.(attr.TypeWithValidate); ok {
+	if attrTypeWithValidate, ok := attrType.(xattr.TypeWithValidate); ok {
+		logging.FrameworkTrace(ctx, "Type implements TypeWithValidate")
+		logging.FrameworkDebug(ctx, "Calling provider defined Type Validate")
 		diags.Append(attrTypeWithValidate.Validate(ctx, tfVal, path)...)
+		logging.FrameworkDebug(ctx, "Called provider defined Type Validate")
 
 		if diags.HasError() {
 			return diags
@@ -211,10 +246,18 @@ func (p *Plan) SetAttribute(ctx context.Context, path *tftypes.AttributePath, va
 
 // pathExists walks the current state and returns true if the path can be reached.
 // The value at the path may be null or unknown.
-func (p Plan) pathExists(ctx context.Context, path *tftypes.AttributePath) (bool, diag.Diagnostics) {
+func (p Plan) pathExists(ctx context.Context, path path.Path) (bool, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	_, remaining, err := tftypes.WalkAttributePath(p.Raw, path)
+	tftypesPath, tftypesPathDiags := totftypes.AttributePath(ctx, path)
+
+	diags.Append(tftypesPathDiags...)
+
+	if diags.HasError() {
+		return false, diags
+	}
+
+	_, remaining, err := tftypes.WalkAttributePath(p.Raw, tftypesPath)
 
 	if err != nil {
 		if errors.Is(err, tftypes.ErrInvalidStep) {
@@ -237,9 +280,17 @@ func (p Plan) pathExists(ctx context.Context, path *tftypes.AttributePath) (bool
 // Plan values along the path. If the value at the path does not yet exist,
 // this will perform recursion to add the child value to a parent value,
 // creating the parent value if necessary.
-func (p Plan) setAttributeTransformFunc(ctx context.Context, path *tftypes.AttributePath, tfVal tftypes.Value, diags diag.Diagnostics) (transformFunc, diag.Diagnostics) {
+func (p Plan) setAttributeTransformFunc(ctx context.Context, path path.Path, tfVal tftypes.Value, diags diag.Diagnostics) (transformFunc, diag.Diagnostics) {
 	exists, pathExistsDiags := p.pathExists(ctx, path)
 	diags.Append(pathExistsDiags...)
+
+	if diags.HasError() {
+		return nil, diags
+	}
+
+	tftypesPath, tftypesPathDiags := totftypes.AttributePath(ctx, path)
+
+	diags.Append(tftypesPathDiags...)
 
 	if diags.HasError() {
 		return nil, diags
@@ -248,15 +299,16 @@ func (p Plan) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attri
 	if exists {
 		// Overwrite existing value
 		return func(p *tftypes.AttributePath, v tftypes.Value) (tftypes.Value, error) {
-			if p.Equal(path) {
+			if p.Equal(tftypesPath) {
 				return tfVal, nil
 			}
 			return v, nil
 		}, diags
 	}
 
-	parentPath := path.WithoutLastStep()
-	parentAttrType, err := p.Schema.AttributeTypeAtPath(parentPath)
+	parentPath := path.ParentPath()
+	parentTftypesPath := tftypesPath.WithoutLastStep()
+	parentAttrType, err := p.Schema.AttributeTypeAtPath(parentTftypesPath)
 
 	if err != nil {
 		err = fmt.Errorf("error getting parent attribute type in schema: %w", err)
@@ -268,7 +320,7 @@ func (p Plan) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attri
 		return nil, diags
 	}
 
-	parentValue, err := p.terraformValueAtPath(parentPath)
+	parentValue, err := p.terraformValueAtPath(parentTftypesPath)
 
 	if err != nil && !errors.Is(err, tftypes.ErrInvalidStep) {
 		diags.AddAttributeError(
@@ -301,7 +353,7 @@ func (p Plan) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attri
 	}
 
 	var childValueDiags diag.Diagnostics
-	childStep := path.Steps()[len(path.Steps())-1]
+	childStep, _ := path.Steps().LastStep()
 	parentValue, childValueDiags = upsertChildValue(ctx, parentPath, parentValue, childStep, tfVal)
 	diags.Append(childValueDiags...)
 
@@ -309,8 +361,11 @@ func (p Plan) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attri
 		return nil, diags
 	}
 
-	if attrTypeWithValidate, ok := parentAttrType.(attr.TypeWithValidate); ok {
+	if attrTypeWithValidate, ok := parentAttrType.(xattr.TypeWithValidate); ok {
+		logging.FrameworkTrace(ctx, "Type implements TypeWithValidate")
+		logging.FrameworkDebug(ctx, "Calling provider defined Type Validate")
 		diags.Append(attrTypeWithValidate.Validate(ctx, parentValue, parentPath)...)
+		logging.FrameworkDebug(ctx, "Called provider defined Type Validate")
 
 		if diags.HasError() {
 			return nil, diags
@@ -320,6 +375,8 @@ func (p Plan) setAttributeTransformFunc(ctx context.Context, path *tftypes.Attri
 	return p.setAttributeTransformFunc(ctx, parentPath, parentValue, diags)
 }
 
+// TODO: Potentially remove this when Raw is changed to attr.Value or similar
+// Reference: https://github.com/hashicorp/terraform-plugin-framework/issues/366
 func (p Plan) terraformValueAtPath(path *tftypes.AttributePath) (tftypes.Value, error) {
 	rawValue, remaining, err := tftypes.WalkAttributePath(p.Raw, path)
 	if err != nil {

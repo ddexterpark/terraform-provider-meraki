@@ -66,8 +66,6 @@ type NestedAttributes interface {
 	AttributeType() attr.Type
 	GetNestingMode() NestingMode
 	GetAttributes() map[string]Attribute
-	GetMinItems() int64
-	GetMaxItems() int64
 	Equal(NestedAttributes) bool
 	unimplementable()
 }
@@ -75,7 +73,7 @@ type NestedAttributes interface {
 type nestedAttributes map[string]Attribute
 
 func (n nestedAttributes) GetAttributes() map[string]Attribute {
-	return map[string]Attribute(n)
+	return n
 }
 
 func (n nestedAttributes) unimplementable() {}
@@ -113,7 +111,7 @@ func (n nestedAttributes) AttributeType() attr.Type {
 // configuration.
 func SingleNestedAttributes(attributes map[string]Attribute) NestedAttributes {
 	return singleNestedAttributes{
-		nestedAttributes(attributes),
+		attributes,
 	}
 }
 
@@ -123,14 +121,6 @@ type singleNestedAttributes struct {
 
 func (s singleNestedAttributes) GetNestingMode() NestingMode {
 	return NestingModeSingle
-}
-
-func (s singleNestedAttributes) GetMinItems() int64 {
-	return 0
-}
-
-func (s singleNestedAttributes) GetMaxItems() int64 {
-	return 0
 }
 
 func (s singleNestedAttributes) Equal(o NestedAttributes) bool {
@@ -155,39 +145,19 @@ func (s singleNestedAttributes) Equal(o NestedAttributes) bool {
 
 // ListNestedAttributes nests `attributes` under another attribute, allowing
 // multiple instances of that group of attributes to appear in the
-// configuration. Minimum and maximum numbers of times the group can appear in
-// the configuration can be set using `opts`.
-func ListNestedAttributes(attributes map[string]Attribute, opts ListNestedAttributesOptions) NestedAttributes {
+// configuration.
+func ListNestedAttributes(attributes map[string]Attribute) NestedAttributes {
 	return listNestedAttributes{
 		nestedAttributes: nestedAttributes(attributes),
-		min:              opts.MinItems,
-		max:              opts.MaxItems,
 	}
 }
 
 type listNestedAttributes struct {
 	nestedAttributes
-
-	min, max int
-}
-
-// ListNestedAttributesOptions captures additional, optional parameters for
-// ListNestedAttributes.
-type ListNestedAttributesOptions struct {
-	MinItems int
-	MaxItems int
 }
 
 func (l listNestedAttributes) GetNestingMode() NestingMode {
 	return NestingModeList
-}
-
-func (l listNestedAttributes) GetMinItems() int64 {
-	return int64(l.min)
-}
-
-func (l listNestedAttributes) GetMaxItems() int64 {
-	return int64(l.max)
 }
 
 // AttributeType returns an attr.Type corresponding to the nested attributes.
@@ -210,12 +180,6 @@ func (l listNestedAttributes) Equal(o NestedAttributes) bool {
 	if !ok {
 		return false
 	}
-	if l.min != other.min {
-		return false
-	}
-	if l.max != other.max {
-		return false
-	}
 	if len(other.nestedAttributes) != len(l.nestedAttributes) {
 		return false
 	}
@@ -233,40 +197,19 @@ func (l listNestedAttributes) Equal(o NestedAttributes) bool {
 
 // SetNestedAttributes nests `attributes` under another attribute, allowing
 // multiple instances of that group of attributes to appear in the
-// configuration, while requiring each group of values be unique. Minimum and
-// maximum numbers of times the group can appear in the configuration can be
-// set using `opts`.
-func SetNestedAttributes(attributes map[string]Attribute, opts SetNestedAttributesOptions) NestedAttributes {
+// configuration, while requiring each group of values be unique.
+func SetNestedAttributes(attributes map[string]Attribute) NestedAttributes {
 	return setNestedAttributes{
 		nestedAttributes: nestedAttributes(attributes),
-		min:              opts.MinItems,
-		max:              opts.MaxItems,
 	}
 }
 
 type setNestedAttributes struct {
 	nestedAttributes
-
-	min, max int
-}
-
-// SetNestedAttributesOptions captures additional, optional parameters for
-// SetNestedAttributes.
-type SetNestedAttributesOptions struct {
-	MinItems int
-	MaxItems int
 }
 
 func (s setNestedAttributes) GetNestingMode() NestingMode {
 	return NestingModeSet
-}
-
-func (s setNestedAttributes) GetMinItems() int64 {
-	return int64(s.min)
-}
-
-func (s setNestedAttributes) GetMaxItems() int64 {
-	return int64(s.max)
 }
 
 // AttributeType returns an attr.Type corresponding to the nested attributes.
@@ -289,12 +232,6 @@ func (s setNestedAttributes) Equal(o NestedAttributes) bool {
 	if !ok {
 		return false
 	}
-	if s.min != other.min {
-		return false
-	}
-	if s.max != other.max {
-		return false
-	}
 	if len(other.nestedAttributes) != len(s.nestedAttributes) {
 		return false
 	}
@@ -313,39 +250,19 @@ func (s setNestedAttributes) Equal(o NestedAttributes) bool {
 // MapNestedAttributes nests `attributes` under another attribute, allowing
 // multiple instances of that group of attributes to appear in the
 // configuration. Each group will need to be associated with a unique string by
-// the user. Minimum and maximum numbers of times the group can appear in the
-// configuration can be set using `opts`.
-func MapNestedAttributes(attributes map[string]Attribute, opts MapNestedAttributesOptions) NestedAttributes {
+// the user.
+func MapNestedAttributes(attributes map[string]Attribute) NestedAttributes {
 	return mapNestedAttributes{
 		nestedAttributes: nestedAttributes(attributes),
-		min:              opts.MinItems,
-		max:              opts.MaxItems,
 	}
 }
 
 type mapNestedAttributes struct {
 	nestedAttributes
-
-	min, max int
-}
-
-// MapNestedAttributesOptions captures additional, optional parameters for
-// MapNestedAttributes.
-type MapNestedAttributesOptions struct {
-	MinItems int
-	MaxItems int
 }
 
 func (m mapNestedAttributes) GetNestingMode() NestingMode {
 	return NestingModeMap
-}
-
-func (m mapNestedAttributes) GetMinItems() int64 {
-	return int64(m.min)
-}
-
-func (m mapNestedAttributes) GetMaxItems() int64 {
-	return int64(m.max)
 }
 
 // AttributeType returns an attr.Type corresponding to the nested attributes.
@@ -366,12 +283,6 @@ func (m mapNestedAttributes) ApplyTerraform5AttributePathStep(step tftypes.Attri
 func (m mapNestedAttributes) Equal(o NestedAttributes) bool {
 	other, ok := o.(mapNestedAttributes)
 	if !ok {
-		return false
-	}
-	if m.min != other.min {
-		return false
-	}
-	if m.max != other.max {
 		return false
 	}
 	if len(other.nestedAttributes) != len(m.nestedAttributes) {
