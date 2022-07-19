@@ -3,29 +3,30 @@ package tfsdk
 import (
 	"context"
 
-	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 )
 
-// ResourceImportStateNotImplemented is a helper function to return an error
-// diagnostic about the resource not supporting import. The details defaults
-// to a generic message to contact the provider developer, but can be
-// customized to provide specific information or recommendations.
-func ResourceImportStateNotImplemented(ctx context.Context, details string, resp *ImportResourceStateResponse) {
-	if details == "" {
-		details = "This resource does not support import. Please contact the provider developer for additional information."
-	}
+// Optional interface on top of Resource that enables provider control over
+// the ImportResourceState RPC. This RPC is called by Terraform when the
+// `terraform import` command is executed. Afterwards, the ReadResource RPC
+// is executed to allow providers to fully populate the resource state.
+type ResourceWithImportState interface {
+	Resource
 
-	resp.Diagnostics.AddError(
-		"Resource Import Not Implemented",
-		details,
-	)
+	// ImportState is called when the provider must import the state of a
+	// resource instance. This method must return enough state so the Read
+	// method can properly refresh the full resource.
+	//
+	// If setting an attribute with the import identifier, it is recommended
+	// to use the ResourceImportStatePassthroughID() call in this method.
+	ImportState(context.Context, ImportResourceStateRequest, *ImportResourceStateResponse)
 }
 
 // ResourceImportStatePassthroughID is a helper function to set the import
 // identifier to a given state attribute path. The attribute must accept a
 // string value.
-func ResourceImportStatePassthroughID(ctx context.Context, path *tftypes.AttributePath, req ImportResourceStateRequest, resp *ImportResourceStateResponse) {
-	if path == nil || tftypes.NewAttributePath().Equal(path) {
+func ResourceImportStatePassthroughID(ctx context.Context, attrPath path.Path, req ImportResourceStateRequest, resp *ImportResourceStateResponse) {
+	if attrPath.Equal(path.Empty()) {
 		resp.Diagnostics.AddError(
 			"Resource Import Passthrough Missing Attribute Path",
 			"This is always an error in the provider. Please report the following to the provider developer:\n\n"+
@@ -33,5 +34,5 @@ func ResourceImportStatePassthroughID(ctx context.Context, path *tftypes.Attribu
 		)
 	}
 
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path, req.ID)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, attrPath, req.ID)...)
 }

@@ -7,7 +7,9 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-go/tftypes"
+	"github.com/hashicorp/terraform-plugin-framework/internal/logging"
+	"github.com/hashicorp/terraform-plugin-framework/internal/totftypes"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 )
 
 // AttributePlanModifier represents a modifier for an attribute at plan time.
@@ -127,7 +129,20 @@ func (r RequiresReplaceModifier) Modify(ctx context.Context, req ModifyAttribute
 		return
 	}
 
-	attrSchema, err := req.State.Schema.AttributeAtPath(req.AttributePath)
+	// TODO: Remove after schema refactoring, Attribute is exposed in
+	// ModifyAttributePlanRequest, or Computed is exposed in
+	// ModifyAttributePlanRequest.
+	// Reference: https://github.com/hashicorp/terraform-plugin-framework/issues/365
+	// Reference: https://github.com/hashicorp/terraform-plugin-framework/issues/389
+	tftypesPath, diags := totftypes.AttributePath(ctx, req.AttributePath)
+
+	resp.Diagnostics.Append(diags...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	attrSchema, err := req.State.Schema.AttributeAtPath(tftypesPath)
 
 	// Path may lead to block instead of attribute. Blocks cannot be Computed.
 	// If ErrPathIsBlock, attrSchema.Computed will still be false later.
@@ -139,15 +154,7 @@ func (r RequiresReplaceModifier) Modify(ctx context.Context, req ModifyAttribute
 		return
 	}
 
-	configRaw, err := req.AttributeConfig.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting config value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeConfig.Type(ctx), err),
-		)
-		return
-	}
-	if configRaw == nil && attrSchema.Computed {
+	if req.AttributeConfig.IsNull() && attrSchema.Computed {
 		// if the config is null and the attribute is computed, this
 		// could be an out of band change, don't require replace
 		return
@@ -213,7 +220,7 @@ func RequiresReplaceIf(f RequiresReplaceIfFunc, description, markdownDescription
 
 // RequiresReplaceIfFunc is a conditional function used in the RequiresReplaceIf
 // plan modifier to determine whether the attribute requires replacement.
-type RequiresReplaceIfFunc func(ctx context.Context, state, config attr.Value, path *tftypes.AttributePath) (bool, diag.Diagnostics)
+type RequiresReplaceIfFunc func(ctx context.Context, state, config attr.Value, path path.Path) (bool, diag.Diagnostics)
 
 // RequiresReplaceIfModifier is an AttributePlanModifier that sets RequiresReplace
 // on the attribute if the conditional function returns true.
@@ -267,7 +274,20 @@ func (r RequiresReplaceIfModifier) Modify(ctx context.Context, req ModifyAttribu
 		return
 	}
 
-	attrSchema, err := req.State.Schema.AttributeAtPath(req.AttributePath)
+	// TODO: Remove after schema refactoring, Attribute is exposed in
+	// ModifyAttributePlanRequest, or Computed is exposed in
+	// ModifyAttributePlanRequest.
+	// Reference: https://github.com/hashicorp/terraform-plugin-framework/issues/365
+	// Reference: https://github.com/hashicorp/terraform-plugin-framework/issues/389
+	tftypesPath, diags := totftypes.AttributePath(ctx, req.AttributePath)
+
+	resp.Diagnostics.Append(diags...)
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	attrSchema, err := req.State.Schema.AttributeAtPath(tftypesPath)
 
 	// Path may lead to block instead of attribute. Blocks cannot be Computed.
 	// If ErrPathIsBlock, attrSchema.Computed will still be false later.
@@ -279,15 +299,7 @@ func (r RequiresReplaceIfModifier) Modify(ctx context.Context, req ModifyAttribu
 		return
 	}
 
-	configRaw, err := req.AttributeConfig.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting config value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeConfig.Type(ctx), err),
-		)
-		return
-	}
-	if configRaw == nil && attrSchema.Computed {
+	if req.AttributeConfig.IsNull() && attrSchema.Computed {
 		// if the config is null and the attribute is computed, this
 		// could be an out of band change, don't require replace
 		return
@@ -308,7 +320,7 @@ func (r RequiresReplaceIfModifier) Modify(ctx context.Context, req ModifyAttribu
 	if res {
 		resp.RequiresReplace = true
 	} else if resp.RequiresReplace {
-		// TODO: log that we didn't override the result
+		logging.FrameworkDebug(ctx, "Keeping previous attribute replacement requirement")
 	}
 }
 
@@ -344,47 +356,18 @@ func (r UseStateForUnknownModifier) Modify(ctx context.Context, req ModifyAttrib
 		return
 	}
 
-	val, err := req.AttributeState.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting state value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeState.Type(ctx), err),
-		)
-		return
-	}
-
 	// if we have no state value, there's nothing to preserve
-	if val == nil {
+	if req.AttributeState.IsNull() {
 		return
 	}
 
-	val, err = resp.AttributePlan.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting plan value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", resp.AttributePlan.Type(ctx), err),
-		)
+	// if it's not planned to be the unknown value, stick with the concrete plan
+	if !resp.AttributePlan.IsUnknown() {
 		return
 	}
 
-	// if it's not planned to be the unknown value, stick with
-	// the concrete plan
-	if val != tftypes.UnknownValue {
-		return
-	}
-
-	val, err = req.AttributeConfig.ToTerraformValue(ctx)
-	if err != nil {
-		resp.Diagnostics.AddAttributeError(req.AttributePath,
-			"Error converting config value",
-			fmt.Sprintf("An unexpected error was encountered converting a %s to its equivalent Terraform representation. This is always a bug in the provider.\n\nError: %s", req.AttributeConfig.Type(ctx), err),
-		)
-		return
-	}
-
-	// if the config is the unknown value, use the unknown value
-	// otherwise, interpolation gets messed up
-	if val == tftypes.UnknownValue {
+	// if the config is the unknown value, use the unknown value otherwise, interpolation gets messed up
+	if req.AttributeConfig.IsUnknown() {
 		return
 	}
 
@@ -406,8 +389,13 @@ func (r UseStateForUnknownModifier) MarkdownDescription(ctx context.Context) str
 // instance of this request struct is supplied as an argument to the Modify
 // function of an attribute's plan modifier(s).
 type ModifyAttributePlanRequest struct {
-	// AttributePath is the path of the attribute.
-	AttributePath *tftypes.AttributePath
+	// AttributePath is the path of the attribute. Use this path for any
+	// response diagnostics.
+	AttributePath path.Path
+
+	// AttributePathExpression is the expression matching the exact path of the
+	// attribute.
+	AttributePathExpression path.Expression
 
 	// Config is the configuration the user supplied for the resource.
 	Config Config

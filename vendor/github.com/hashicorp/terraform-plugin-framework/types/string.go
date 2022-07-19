@@ -2,9 +2,14 @@ package types
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
+)
+
+var (
+	_ attr.Value = String{}
 )
 
 func stringValueFromTerraform(ctx context.Context, in tftypes.Value) (attr.Value, error) {
@@ -21,8 +26,6 @@ func stringValueFromTerraform(ctx context.Context, in tftypes.Value) (attr.Value
 	}
 	return String{Value: s}, nil
 }
-
-var _ attr.Value = String{}
 
 // String represents a UTF-8 string value.
 type String struct {
@@ -43,20 +46,21 @@ func (s String) Type(_ context.Context) attr.Type {
 	return StringType
 }
 
-// ToTerraformValue returns the data contained in the *String as a string. If
-// Unknown is true, it returns a tftypes.UnknownValue. If Null is true, it
-// returns nil.
-func (s String) ToTerraformValue(_ context.Context) (interface{}, error) {
+// ToTerraformValue returns the data contained in the *String as a tftypes.Value.
+func (s String) ToTerraformValue(_ context.Context) (tftypes.Value, error) {
 	if s.Null {
-		return nil, nil
+		return tftypes.NewValue(tftypes.String, nil), nil
 	}
 	if s.Unknown {
-		return tftypes.UnknownValue, nil
+		return tftypes.NewValue(tftypes.String, tftypes.UnknownValue), nil
 	}
-	return s.Value, nil
+	if err := tftypes.ValidateValue(tftypes.String, s.Value); err != nil {
+		return tftypes.NewValue(tftypes.String, tftypes.UnknownValue), err
+	}
+	return tftypes.NewValue(tftypes.String, s.Value), nil
 }
 
-// Equal returns true if `other` is a *String and has the same value as `s`.
+// Equal returns true if `other` is a String and has the same value as `s`.
 func (s String) Equal(other attr.Value) bool {
 	o, ok := other.(String)
 	if !ok {
@@ -69,4 +73,29 @@ func (s String) Equal(other attr.Value) bool {
 		return false
 	}
 	return s.Value == o.Value
+}
+
+// IsNull returns true if the String represents a null value.
+func (s String) IsNull() bool {
+	return s.Null
+}
+
+// IsUnknown returns true if the String represents a currently unknown value.
+func (s String) IsUnknown() bool {
+	return s.Unknown
+}
+
+// String returns a human-readable representation of the String value.
+// The string returned here is not protected by any compatibility guarantees,
+// and is intended for logging and error reporting.
+func (s String) String() string {
+	if s.Unknown {
+		return attr.UnknownValueString
+	}
+
+	if s.Null {
+		return attr.NullValueString
+	}
+
+	return fmt.Sprintf("%q", s.Value)
 }
